@@ -1,19 +1,26 @@
-import os
 import warnings
 from scipy.signal import hilbert,savgol_filter,find_peaks
-import glob
-import spikeinterface.extractors as se
-import spikeinterface.widgets as sw
 import numpy as np
-import spykes
-import elephant
-import neo
 import pandas as pd
 import math
 
 from scipy.signal import butter,filtfilt,lfilter
 
 def butter_bandpass(lowcut, highcut, fs, order=5):
+    '''
+    Helper function to create butterworth filter parameters
+    Parameters
+    ----------
+    lowcut :    lowcut frequency in Hz
+    highcut :   highcut frequency in Hz
+    fs :        sampling rate in Hz
+    order :     butterwoth filter order (int)
+
+    Returns
+    -------
+    b,a - Parameters for a butterworth filter
+
+    '''
     nyq = 0.5 * fs
     low = lowcut / nyq
     high = highcut / nyq
@@ -22,12 +29,40 @@ def butter_bandpass(lowcut, highcut, fs, order=5):
 
 
 def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
+    """
+    Wrapper to
+    Parameters
+    ----------
+    data :      an aarray of data to be filtered
+    lowcut :    lowcut frequency in Hz
+    highcut :   highcut frequency in Hz
+    fs :        sampling rate in Hz
+    order :     butterwoth filter order (int)
+
+    Returns
+    -------
+    y : filtered data
+
+    """
     b, a = butter_bandpass(lowcut, highcut, fs, order=order)
     y = filtfilt(b, a, data)
     return y
 
 
 def find_nearest(array,value):
+    '''
+    Find the index of the nearest value in "array" to the value of "value"
+    Useful for matching indices of timestamps from sources with different sampling rates
+    Parameters
+    ----------
+    array : an array of values to be mapped into
+    value : a value to map into "array"
+
+    Returns
+    -------
+    idx - index in array to which "value" is nearest
+    '''
+
     idx = np.searchsorted(array, value, side="left")
     if idx > 0 and (idx == len(array) or math.fabs(value - array[idx-1]) < math.fabs(value - array[idx])):
         return idx-1
@@ -35,24 +70,25 @@ def find_nearest(array,value):
         return idx
 
 
-def get_good_sort(sort):
-    subsorts,labels = sort.get_sub_extractors_by_property(property_name='KSLabel',return_property_list=True)
-    good_sort_idx = np.where(labels=='good')[0][0]
-    good_sort = subsorts[good_sort_idx]
-    return(good_sort)
-
-
-def nasal_to_phase(nasal):
+def nasal_to_phase(x):
     '''
-    This was tricky as the hilbert chokes on too large a vector.
-    Chunks vector into overlapping windows
-    xa_tot is computed but not returned...
+    Given an input array, use a Hilbert transform to return the phase of that signal
+    over time.
 
-    :param nasal: pandas dataframe where index is the time
-    :return: phi
+    This implementation is designed for very large array as the hilbert chokes on too large a vector.
+    Chunks vector into overlapping windows and manipulates overlaps to create smooth transitions between windows
+
+    xa_tot is computed but not returned.
+
+    Parameters
+    ----------
+    x : input data to be transformed
+
+    Returns
+    -------
+    phi : vector of phase values on the interval [-pi:pi] over time
     '''
 
-    x = nasal.values.astype('float64').ravel()
     x = savgol_filter(x, 101, 2)
     window = 500000
     overlap = 20000
@@ -85,6 +121,7 @@ def nasal_to_phase(nasal):
 
 
 def get_trains_seconds(spike_extractor):
+    #TODO: remove
     trains = spike_extractor.get_units_spike_train()
     trains_seconds = []
     for train in trains:
@@ -99,6 +136,7 @@ def align_spikes_to_nasal(nasal,spike_extractor):
     :param spike_extractor:
     :return:
     '''
+    #TODO: remove the spikeectractor element?
     trains_seconds = get_trains_seconds(spike_extractor)
     for ii,train in enumerate(trains_seconds):
         nasal[f'U{ii:03d}'] = np.zeros(nasal.shape[0],dtype='int')
@@ -110,8 +148,9 @@ def align_spikes_to_nasal(nasal,spike_extractor):
 def get_insp_onset(nasal_trace):
     '''
     Return the times of inspiration onset
+
     :param nasal_trace:
-    :return:
+    :return insp_onset: returns the index in nasal_trace of the inspiration onsets
     '''
     smooth = savgol_filter(nasal_trace, 101, 1)
     diff2 = np.diff(savgol_filter(np.diff(smooth), 101, 1))
@@ -123,7 +162,7 @@ def shift_phi(phi,insp_onset):
     '''
     Shifts the phi such that 0 is inspiration onset
     :param nasal:
-    :return:
+    :return new_phi: phase shifted phi
     '''
     m_phi = np.mean(phi[insp_onset])
     new_phi = phi.copy()
@@ -142,6 +181,7 @@ def get_LFP(rec,chan_ids):
     :param chan_ids:
     :return:
     '''
+    #TODO: remove
     warnings.warn('You really shouldnt be using this')
     raw_dat = pd.read_hdf(rec,'SPKC')
     ad_gain = pd.read_hdf(rec,'ad_gain')
@@ -160,16 +200,18 @@ def get_LFP(rec,chan_ids):
 
 
 def get_PD_from_hist(theta_k,rate):
-    '''Calculate the vector sum direction and tuning strength from a histogram of responses in polar space
-    e.g.: we have a histogram on -pi:pi of spike rates for a given Bending direction.
-    This should generalize to any polar histogram
+    '''
+    Calculate the vector sum direction and tuning strength from a histogram of responses in polar space
+
+    Migrated from whisker work, but should generalize to any polar histogram
     INPUTS: theta_k -- sampled bin locations from a polar histogram.
                         * Assumes number of bins is the same as the number of observed rates (i.e. if you use bin edges you will probably have to truncate the input to fit)
                         * Bin centers is a better usage
             rate -- observed rate at each bin location
     OUTPUTS:    theta -- the vector mean direction of the input bin locations and centers
                 L_dir -- the strength of the tuning as defined by Mazurek FiNC 2014. Equivalient to 1- Circular Variance
-            '''
+    '''
+
     # Calculate the direction tuning strength
     L_dir = np.abs(
         np.sum(
@@ -189,9 +231,13 @@ def get_PD_from_hist(theta_k,rate):
 
 
 def angular_response_hist(angular_var, sp, use_flags, nbins=100,min_obs=5):
-    '''Given an angular variable (like MD that varies on -pi:pi,
+    '''
+    Given an angular variable that varies on -pi:pi,
     returns the probability of observing a spike (or gives a spike rate) normalized by
     the number of observations of that angular variable.
+
+    Migrated from whisker work. May need to be refactored to be more general
+
     INPUTS: angular var -- either a numpy array or a neo analog signal. Should be 1-D
             sp -- type: neo.core.SpikeTrain, numpy array. Sp can either be single spikes or a rate
     OUTPUTS:    rate -- the stimulus evoked rate at each observed theta bin
@@ -200,6 +246,7 @@ def angular_response_hist(angular_var, sp, use_flags, nbins=100,min_obs=5):
                 L_dir -- The preferred direction tuning strength (1-CircVar)
     '''
 
+    # Overloaded for neo object or array
     if type(angular_var)==neo.core.analogsignal.AnalogSignal:
         angular_var = angular_var.magnitude
     if angular_var.ndim==2:
@@ -207,6 +254,7 @@ def angular_response_hist(angular_var, sp, use_flags, nbins=100,min_obs=5):
             angular_var = angular_var.ravel()
         else:
             raise Exception('Angular var must be able to be unambiguously converted into a vector')
+
     if type(nbins)==int:
         bins = np.linspace(-np.pi,np.pi,nbins+1,endpoint=True)
     # not nan is a list of finite sample indices, rather than a boolean mask. This is used in computing the posterior
