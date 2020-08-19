@@ -1,15 +1,10 @@
 import sys
 import tqdm
-from pathlib import Path
-import glob
-import spikeinterface.toolkit as st
-import numpy as np
 import pandas as pd
-import os
-sys.path.append('../src')
+sys.path.append('../')
 import spikeinterface.extractors as se
 from readSGLX import *
-from utils.ephys.resp_sig_proc import bwfilt,integrator
+from utils.ephys.signal import *
 
 def get_rect_int(imec_dat,chan_skip=10,downsample=10,integration_time=0.016):
     '''
@@ -39,7 +34,7 @@ def get_rect_int(imec_dat,chan_skip=10,downsample=10,integration_time=0.016):
     for ii,chan in enumerate(tqdm.tqdm(chans)):
         temp = rec.get_traces(channel_ids=chan)
         temp_v = GainCorrectIM(temp,[chan],meta).ravel()
-        temp_vf = bwfilt(temp_v,fs,300,10000)
+        temp_vf = butter_bandpass_filter(temp_v,300,10000,fs)
         all_int[ii,:] = integrator(temp_vf,fs,span=integration_time)[::downsample]
 
     df = pd.DataFrame(all_int.T,columns=chans)

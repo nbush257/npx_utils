@@ -1,73 +1,5 @@
-import warnings
 from scipy.signal import hilbert,savgol_filter,find_peaks
 import numpy as np
-import pandas as pd
-import math
-
-from scipy.signal import butter,filtfilt,lfilter
-
-def butter_bandpass(lowcut, highcut, fs, order=5):
-    '''
-    Helper function to create butterworth filter parameters
-    Parameters
-    ----------
-    lowcut :    lowcut frequency in Hz
-    highcut :   highcut frequency in Hz
-    fs :        sampling rate in Hz
-    order :     butterwoth filter order (int)
-
-    Returns
-    -------
-    b,a - Parameters for a butterworth filter
-
-    '''
-    nyq = 0.5 * fs
-    low = lowcut / nyq
-    high = highcut / nyq
-    b, a = butter(order, [low, high], btype='band')
-    return b, a
-
-
-def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
-    """
-    Wrapper to
-    Parameters
-    ----------
-    data :      an aarray of data to be filtered
-    lowcut :    lowcut frequency in Hz
-    highcut :   highcut frequency in Hz
-    fs :        sampling rate in Hz
-    order :     butterwoth filter order (int)
-
-    Returns
-    -------
-    y : filtered data
-
-    """
-    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
-    y = filtfilt(b, a, data)
-    return y
-
-
-def find_nearest(array,value):
-    '''
-    Find the index of the nearest value in "array" to the value of "value"
-    Useful for matching indices of timestamps from sources with different sampling rates
-    Parameters
-    ----------
-    array : an array of values to be mapped into
-    value : a value to map into "array"
-
-    Returns
-    -------
-    idx - index in array to which "value" is nearest
-    '''
-
-    idx = np.searchsorted(array, value, side="left")
-    if idx > 0 and (idx == len(array) or math.fabs(value - array[idx-1]) < math.fabs(value - array[idx])):
-        return idx-1
-    else:
-        return idx
 
 
 def nasal_to_phase(x):
@@ -120,31 +52,6 @@ def nasal_to_phase(x):
     return(phi)
 
 
-def get_trains_seconds(spike_extractor):
-    #TODO: remove
-    trains = spike_extractor.get_units_spike_train()
-    trains_seconds = []
-    for train in trains:
-        trains_seconds.append(train / spike_extractor.get_sampling_frequency())
-    return(trains_seconds)
-
-
-def align_spikes_to_nasal(nasal,spike_extractor):
-    '''
-    creates in place boolean mask for spikes
-    :param nasal:
-    :param spike_extractor:
-    :return:
-    '''
-    #TODO: remove the spikeectractor element?
-    trains_seconds = get_trains_seconds(spike_extractor)
-    for ii,train in enumerate(trains_seconds):
-        nasal[f'U{ii:03d}'] = np.zeros(nasal.shape[0],dtype='int')
-        for spike in train:
-            nasal_idx  = find_nearest(nasal.index,spike)
-            nasal[f'U{ii:03d}'][nasal_idx] = 1
-
-
 def get_insp_onset(nasal_trace):
     '''
     Return the times of inspiration onset
@@ -171,32 +78,6 @@ def shift_phi(phi,insp_onset):
     new_phi = (new_phi + np.pi) % (2 * np.pi) - np.pi
 
     return(new_phi)
-
-
-def get_LFP(rec,chan_ids):
-    '''
-    Not a good function! placeholder until we get better
-    I/O modules
-    :param rec:
-    :param chan_ids:
-    :return:
-    '''
-    #TODO: remove
-    warnings.warn('You really shouldnt be using this')
-    raw_dat = pd.read_hdf(rec,'SPKC')
-    ad_gain = pd.read_hdf(rec,'ad_gain')
-
-    all_LFP = pd.DataFrame()
-    for chan in chan_ids:
-        raw = raw_dat.iloc[:, chan]
-        raw *= ad_gain.values[0][0]
-        LFP = butter_bandpass_filter(raw.values.ravel(),0.1,60.,1/raw.index[1],order=2)
-        all_LFP[chan] = LFP
-
-    all_LFP.index = raw_dat.index
-    all_LFP = all_LFP.iloc[::8,:]
-    return(all_LFP)
-
 
 
 def get_PD_from_hist(theta_k,rate):
