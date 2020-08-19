@@ -6,24 +6,26 @@ import spikeinterface.toolkit as st
 import numpy as np
 import pandas as pd
 import os
-import click
-import scipy.signal
-sys.path.append('./src')
-sys.path.append('./dynaresp')
-sys.path.append('.')
-sys.path.append('..')
-import spikeinterface.sorters as ss
+sys.path.append('../src')
 import spikeinterface.extractors as se
 from readSGLX import *
 from utils.ephys.resp_sig_proc import bwfilt,integrator
 
-imec_dat = glob.glob(os.path.join(g_path, '*ap.bin'))[0]
-
 def get_rect_int(imec_dat,chan_skip=10,downsample=10,integration_time=0.016):
     '''
-    Performs downsampling by factor of 10 by default
-    :param imec_dat:
-    :return:
+    Get rectified and integrated trace across the imec probe
+    Attempts to psuedo replace the need for an extracellular probe
+
+    Parameters
+    ----------
+    imec_dat : filename of the imec AP data
+    chan_skip : number of channels to skip (speeds up computation and reduces memory requirements)
+    downsample : Downsample factor (speeds up computation and reduces memory requirements)
+    integration_time : Window of exponential integration in seconds
+
+    Returns
+    -------
+
     '''
     meta = readMeta(Path(imec_dat))
     fs = SampRate(meta)

@@ -22,7 +22,19 @@ from ecephys_spike_sorting.ecephys_spike_sorting.modules.mean_waveforms.extract_
 from ecephys_spike_sorting.ecephys_spike_sorting.modules.mean_waveforms.metrics_from_file import metrics_from_file
 from ecephys_spike_sorting.ecephys_spike_sorting.modules.quality_metrics.metrics import calculate_metrics
 
+"""
+First pass attempt to implement the ecephys pipeline on our data.
+This is very ugly at moment, but could probably be cleaned up.
+Likely useful to properly implement Argschema
+"""
+
 def get_noiseWaveformParams():
+    '''
+    Returns
+    -------
+    Dictionary of default parameters for the removal of noise waveforms
+
+    '''
     params = {}
     params['smoothed_template_amplitude_threshold'] = 0.2
     params['template_amplitude_threshold'] = 0.2
@@ -52,6 +64,7 @@ def get_noiseWaveformParams():
 
 
 def makeMemMapRaw(binFullPath, meta):
+    #TODO: This is a copy of the function in the readSGLX.py file. Need to do a proper import of this function
     nChan = int(meta['nSavedChans'])
     nFileSamp = int(int(meta['fileSizeBytes'])/(2*nChan))
     print("nChan: %d, nFileSamp: %d" % (nChan, nFileSamp))
@@ -61,10 +74,25 @@ def makeMemMapRaw(binFullPath, meta):
 
 
 def get_noise_channels(raw_data_file, meta, num_channels, sample_rate, bit_volts, noise_threshold=20):
+    '''
+    Analyzes the RMS of each channel and marks super noisy channels to be ignored
+    Parameters
+    ----------
+    raw_data_file : raw imec bin filename
+    meta : imported SGLX metadata
+    num_channels :
+    sample_rate : in Hz
+    bit_volts :
+    noise_threshold :
+
+    Returns
+    -------
+    mask : Boolean array of channels to keep
+
+    '''
     noise_delay = 5  # in seconds
     noise_interval = 10  # in seconds
 
-    # raw_data = np.memmap(raw_data_file, dtype='int16')
     data = makeMemMapRaw(raw_data_file,meta).T
     num_samples = data.shape[0]
 
@@ -121,6 +149,17 @@ def Chan0_uVPerBit(meta):
     return(uVPerBit)
 
 def get_ephys_params(meta):
+    '''
+
+    Parameters
+    ----------
+    meta : metadata dict from SGLX file
+
+    Returns
+    -------
+    dict of parameters that define the ephys metadata
+
+    '''
     ephys_params = {}
     ephys_params['sample_rate'] = float(meta['imSampRate'])
     ephys_params['bit_volts'] = Chan0_uVPerBit(meta)
@@ -133,8 +172,9 @@ def get_ephys_params(meta):
 
 def run_ks2_helper(ap_fn):
     '''
-    :param ap_fn:
-    :param output_dir:
+    Generates a Kilosort config file.
+    :param ap_fn: filename to the SGLX ap bin data
+    :param output_dir: data to save kilosort results to
     :return:
     '''
 
@@ -179,6 +219,19 @@ def run_ks2_helper(ap_fn):
 
 
 def run_ks2_post(ks2_output_dir,sample_rate):
+    '''
+    Postprocesses kilsort output by removing double counted spikes
+
+    Parameters
+    ----------
+    ks2_output_dir : Directory to KS2 results
+    sample_rate :
+
+    Returns
+    -------
+    None - modifies KS2 result files in place
+
+    '''
 
     spike_times, spike_clusters, spike_templates, amplitudes, templates, channel_map, \
     channel_pos, clusterIDs, cluster_quality, cluster_amplitude, pc_features, pc_feature_ind, template_features = \
@@ -233,6 +286,19 @@ def run_ks2_post(ks2_output_dir,sample_rate):
 
 
 def noise_templates(ks2_output_dir,sample_rate):
+    '''
+    Remove clusters and waveforms that are clearly noise and write
+    that identity to a TSV
+    Parameters
+    ----------
+    ks2_output_dir : Directory to KS2 results
+    sample_rate : AP data sample rate in Hz
+
+    Returns
+    -------
+    None - writes a TSV to ks2_output_dir
+
+    '''
     print('ecephys spike sorting: noise templates module')
 
 
@@ -265,6 +331,14 @@ def noise_templates(ks2_output_dir,sample_rate):
 
 
 def get_mean_waveforms_param():
+    '''
+
+    Returns
+    -------
+    default parameter dictionary for the
+    get mean waveforms processing
+
+    '''
     params = {}
     params['samples_per_spike'] = 82
     params['pre_samples'] = 20
@@ -279,6 +353,20 @@ def get_mean_waveforms_param():
 
 
 def mean_waveforms_cwaves(ap_fn,ks2_output_dir):
+    '''
+    Use C_waves to calculate the mean spike waveform shapes
+    for each cluster
+    DO NOT USE ON LINUX
+    Parameters
+    ----------
+    ap_fn: filename to the SGLX ap bin data
+    ks2_output_dir : Directory to KS2 results
+
+    Returns
+    -------
+    1 - Runs C_waves and writes waveform metrics files
+
+    '''
     cwaves_path = os.path.join('Y:/helpers/C_Waves')
     clus_table_npy = os.path.join(ks2_output_dir,'clus_Table.npy')
     clus_time_npy = os.path.join(ks2_output_dir,'spike_times.npy')
@@ -331,6 +419,21 @@ def mean_waveforms_cwaves(ap_fn,ks2_output_dir):
 
 
 def mean_waveforms(ap_fn,ks2_output_dir):
+    '''
+    Use python to calculate the mean spike waveform shapes
+    for each cluster
+
+    For use un Linux
+    Parameters
+    ----------
+    ap_fn: filename to the SGLX ap bin data
+    ks2_output_dir : Directory to KS2 results
+
+    Returns
+    -------
+    1 - Runs C_waves and writes waveform metrics files
+
+    '''
 
     meta_fn = os.path.splitext(ap_fn)[0] + '.meta'
     meta = readMeta(Path(meta_fn))
@@ -363,6 +466,13 @@ def mean_waveforms(ap_fn,ks2_output_dir):
 
 
 def get_qc_params():
+    '''
+
+    Returns
+    -------
+    Dict of default parameters for quality control processing
+
+    '''
     qc_params = {}
     qc_params['isi_threshold'] = 0.0015
     qc_params['min_isi'] = 0.00
@@ -379,6 +489,18 @@ def get_qc_params():
 
 
 def QC(ks2_output_dir,ap_fn):
+    '''
+    Run quality control metric calculation
+    Parameters
+    ----------
+    ks2_output_dir : Directory to KS2 results
+    ap_fn: filename to the SGLX ap bin data
+
+    Returns
+    -------
+    Writes cluster_metrics.csv file and appends to waveform_metrics.csv file
+
+    '''
 
     qc_params = get_qc_params()
     meta_fn = os.path.splitext(ap_fn)[0] + '.meta'
