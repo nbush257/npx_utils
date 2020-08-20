@@ -27,8 +27,14 @@ def meta2prb(meta_fn):
 
 @click.command()
 @click.argument('fn')
-@click.argument('output_dir')
+@click.option('-o','--output_dir',type=str,default=None)
 def main(fn,output_dir):
+    if output_dir is None:
+        p_load = '/'.join(Path(fn).parts[:-1])
+        output_dir = p_load.replace('raw','processed')
+        if not os.path.isdir(output_dir):
+            os.makedirs(output_dir)
+
     meta_fn = os.path.splitext(fn)[0] + '.meta'
     prb_fn = meta2prb(meta_fn)
     rec = se.SpikeGLXRecordingExtractor(fn)
