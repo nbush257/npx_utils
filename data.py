@@ -2,6 +2,7 @@
 import sys
 import numpy as np
 import readSGLX
+from pathlib import Path
 sys.path.append('../')
 from utils.ephys.signal import binary_onsets
 
@@ -38,4 +39,18 @@ def get_tvec(x_sync,sync_timestamps,sr):
 
     return(tvec)
 
+
+def get_ni_analog(ni_bin_fn, chan_id):
+    '''
+    Convinience function to load in a NI analog channel
+    :param ni_bin_fn: filename to load from
+    :param chan_id: channel index to load
+    :return: analog_dat
+    '''
+    meta = readSGLX.readMeta(Path(ni_bin_fn))
+    bitvolts = readSGLX.Int2Volts(meta)
+    ni_dat = readSGLX.makeMemMapRaw(ni_bin_fn,meta)
+    analog_dat = ni_dat[chan_id]*bitvolts
+
+    return(analog_dat)
 
