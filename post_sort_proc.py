@@ -52,16 +52,25 @@ def nasal_to_phase(x):
     return(phi)
 
 
-def get_insp_onset(nasal_trace):
-    '''
+def get_insp_onset(nasal_trace,order=2,direction=1,thresh=3):
+    """
     Return the times of inspiration onset
 
-    :param nasal_trace:
-    :return insp_onset: returns the index in nasal_trace of the inspiration onsets
-    '''
-    smooth = savgol_filter(nasal_trace, 101, 1)
-    diff2 = np.diff(savgol_filter(np.diff(smooth), 101, 1))
-    insp_onset = find_peaks(diff2, prominence=np.std(diff2) * 3)[0]
+    :param nasal_trace: nasal thermistor trace
+    :param order: Use first or second derivative (1,2)
+    :param direction: do we expect inspiration to be up or down (1,-1)in the trace?
+    :return: samples of inspiration onset
+    """
+
+    direction = np.sign(direction)
+    d_nasal = direction*savgol_filter(np.diff(nasal_trace),501,1)
+    diff2 = savgol_filter(np.diff(d_nasal),501,1)
+    if order==1:
+        insp_onset = find_peaks(d_nasal, prominence=np.std(d_nasal) * thresh)[0]
+    elif order==2:
+        insp_onset = find_peaks(diff2, prominence=np.std(diff2) * thresh)[0]
+    else:
+        raise NotImplemented('Only order 1 or 2 is implemented')
     return(insp_onset)
 
 
