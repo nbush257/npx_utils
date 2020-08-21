@@ -11,7 +11,7 @@ def get_tvec(x_sync,sync_timestamps,sr):
     Get a time vector for NI that uses the sync signal
 
     :param x_sync:
-    :param sync_timestamps:
+    :param sync_timestamps: should be from the IMEC master probes
     :return: tvec
     '''
     tvec = np.empty_like(x_sync)
