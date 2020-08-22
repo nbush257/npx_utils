@@ -1,5 +1,7 @@
 """Routines for data import and manipulation."""
 import sys
+import pandas as pd
+import os
 import numpy as np
 import readSGLX
 from pathlib import Path
@@ -90,5 +92,4 @@ def create_spike_dict(ks2_dir,clus_id=None):
         spike_dict[clu] = temp
 
     return(spike_dict)
-
 
