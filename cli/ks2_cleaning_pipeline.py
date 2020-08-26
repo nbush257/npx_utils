@@ -480,10 +480,7 @@ def QC(ks2_output_dir,ap_fn):
 
 
 
-@click.command()
-@click.argument('ks2_output_dir')
-@click.argument('ap_fn')
-def main(ks2_output_dir,ap_fn):
+def run_post_sort_pipeline(ks2_output_dir,ap_fn):
     '''
     CLI to run postprocessing on a kilosort2 finished sort.
     Currently implemented to run on cluster.
@@ -494,14 +491,16 @@ def main(ks2_output_dir,ap_fn):
     meta = readMeta(Path(meta_fn))
     sample_rate = float(meta['imSampRate'])
 
+    print('='*50)
     print('Running Kilosort postprocessing')
     run_ks2_post(ks2_output_dir,sample_rate)
+    print('='*50)
     print('Removing noise clusters')
     noise_templates(ks2_output_dir,sample_rate)
+    print('='*50)
     print('Calculating Mean waveforms')
     mean_waveforms(ap_fn,ks2_output_dir)
+    print('='*50)
     print('Calculating QC metrics')
     QC(ks2_output_dir,ap_fn)
 
-if __name__=='__main__':
-    main()
