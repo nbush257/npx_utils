@@ -41,9 +41,10 @@ def main(fn,output_dir):
     rec = se.SpikeGLXRecordingExtractor(fn)
     rec = se.load_probe_file(rec, prb_fn)
     params = ss.get_default_params('kilosort2')
-    params['minFR'] = 1
+    params['minFR'] = 0.02
     params['minfr_goodchannels'] = 0
     params['car'] = False
+    params['NT'] = 32*1024 + params['ntbuff']
     print('='*50)
     print('Running Kilosort2')
     print('='*50)
