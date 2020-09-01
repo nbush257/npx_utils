@@ -4,6 +4,7 @@ import spikeinterface.sorters as ss
 import sys
 from pathlib2 import Path
 sys.path.append('../')
+sys.path.append('./')
 from readSGLX import *
 from SGLXMetaToCoords import MetaToCoords
 import os

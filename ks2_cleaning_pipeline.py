@@ -2,12 +2,12 @@ import click
 import pandas as pd
 import numpy as np
 import os
-from argschema import ArgSchemaParser
 import sys
 import subprocess
 import platform
 sys.path.append(os.environ['PROJ'])
 sys.path.append(os.path.join(os.environ['PROJ'],'../helpers'))
+from argschema import ArgSchemaParser
 from ecephys_spike_sorting.ecephys_spike_sorting.modules.kilosort_helper._schemas import Kilosort2Parameters
 
 from ecephys_spike_sorting.ecephys_spike_sorting.common.utils import rms,load_kilosort_data,write_cluster_group_tsv
