@@ -1,0 +1,69 @@
+---
+title: "PCA"
+author: "Glenn and Jason"
+date: "9/2/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+dat1 <- read.csv("/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-12/m202012_g11/m202012_g11_imec0/cluster_metrics.csv", stringsAsFactors = F)
+dat2 <- read.csv("/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-12/m202012_g11/m202012_g11_imec0/waveform_metrics.csv", stringsAsFactors = F)
+dat2 <- read.csv("/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-12/m202012_g11/m202012_g11_imec0/overlap_summary.csv", stringsAsFactors = F, header = F)
+dat2 <- read.delim("/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-12/m202012_g11/m202012_g11_imec0/cluster_KSLabel.tsv", stringsAsFactors = F)
+```
+
+```{r}
+dim(dat2)
+```
+
+```{r}
+head(dat2)
+```
+```{r}
+dat1$cluster_id==dat2$cluster_id
+```
+
+```{r}
+dat3 <- merge(dat1, dat2, by = "cluster_id", all = T)
+dim(dat1)
+dim(dat2)
+dim(dat3)
+```
+
+```{r}
+head(dat3)
+```
+
+```{r}
+colnames(dat3)
+```
+
+```{r}
+d <- dat3[,c(3,5,6,7,9,18:21)]
+rownames(d) <- dat3$cluster_id
+dim(d)
+```
+
+```{r}
+head(d)
+```
+
+```{r}
+d <- na.omit(d)
+myPCA <- prcomp(t(d), retx = T, center = T, scale. = T)
+X <- data.frame(myPCA$x)
+head(X)
+```
+
+```{r}
+plot(X$PC1, X$PC2)
+plot(X$PC1, X$PC2, type ="n")
+text(X$PC1, X$PC2, labels = rownames(d), cex = .6)
+plot(X$PC3, X$PC4)
+
+```
+
