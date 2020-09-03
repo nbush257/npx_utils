@@ -10,27 +10,48 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-dat1 <- read.csv("/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-12/m202012_g11/m202012_g11_imec0/cluster_metrics.csv", stringsAsFactors = F)
-dat2 <- read.csv("/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-12/m202012_g11/m202012_g11_imec0/waveform_metrics.csv", stringsAsFactors = F)
-dat2 <- read.csv("/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-12/m202012_g11/m202012_g11_imec0/overlap_summary.csv", stringsAsFactors = F, header = F)
-dat2 <- read.delim("/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-12/m202012_g11/m202012_g11_imec0/cluster_KSLabel.tsv", stringsAsFactors = F)
+library(plyr)
+
+PATH = "/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-12/m202012_g11/m202012_g11_imec0/"
+
+cluster_metrics <- read.csv(paste0(PATH, "cluster_metrics.csv"), stringsAsFactors = F)
+waveform_metrics <- read.csv(paste0(PATH, "waveform_metrics.csv"), stringsAsFactors = F)
+overlap_summary <- read.csv(paste0(PATH, "overlap_summary.csv"), stringsAsFactors = F, header = F)
+cluster_KSLabel <- read.delim(paste0(PATH, "cluster_KSLabel.tsv"), stringsAsFactors = F)
+cluster_group <- read.delim(paste0(PATH, "cluster_group.tsv"), stringsAsFactors = F)
+cluster_ContamPct <- read.delim(paste0(PATH, "cluster_ContamPct.tsv"), stringsAsFactors = F)
 ```
 
 ```{r}
-dim(dat2)
+library(reticulate)
+np <- import("numpy")
+depth <- np$load(paste0(PATH, "fmat.npy"))
 ```
 
 ```{r}
-head(dat2)
-```
-```{r}
-dat1$cluster_id==dat2$cluster_id
+dim(cluster_metrics)
+dim(waveform_metrics)
+dim(overlap_summary)
+dim(cluster_KSLabel)
+dim(cluster_group)
+dim(cluster_ContamPct)
 ```
 
 ```{r}
-dat3 <- merge(dat1, dat2, by = "cluster_id", all = T)
-dim(dat1)
-dim(dat2)
+head(cluster_metrics)
+head(waveform_metrics)
+head(overlap_summary)
+head(cluster_KSLabel)
+head(cluster_group)
+head(cluster_ContamPct)
+```
+```{r}
+cluster_metrics$cluster_id==waveform_metrics$cluster_id
+```
+
+```{r}
+#dat3 <- merge(cluster_metrics, waveform_metrics, by = "cluster_id", all = T)
+dat3 <- plyr::join(cluster_metrics, waveform_metrics, by = "cluster_id")
 dim(dat3)
 ```
 
@@ -39,6 +60,18 @@ head(dat3)
 ```
 
 ```{r}
+colnames(cluster_metrics)
+print("")
+colnames(waveform_metrics)
+print("")
+colnames(overlap_summary)
+print("")
+colnames(cluster_KSLabel)
+print("")
+colnames(cluster_group)
+print("")
+colnames(cluster_ContamPct)
+print("")
 colnames(dat3)
 ```
 
