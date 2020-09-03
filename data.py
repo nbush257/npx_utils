@@ -6,7 +6,7 @@ import numpy as np
 import readSGLX
 from pathlib import Path
 sys.path.append('../')
-from utils.ephys.signal import binary_onsets
+# from utils.ephys.signal import binary_onsets
 
 def get_tvec(x_sync,sync_timestamps,sr):
     '''
