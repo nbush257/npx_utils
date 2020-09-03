@@ -3,7 +3,7 @@
 
 pload=$1
 first='yes'
-for subdir in ${pload}/*/
+for subdir in ${pload}/catgt*/
 do
     fn=$subdir/*.imec*.ap.bin
     if [ ${first} = 'yes' ];then
