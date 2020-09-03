@@ -1,5 +1,8 @@
 from scipy.signal import hilbert,savgol_filter,find_peaks
+import pandas as pd
 import numpy as np
+import os
+
 
 
 def nasal_to_phase(x):
@@ -52,16 +55,25 @@ def nasal_to_phase(x):
     return(phi)
 
 
-def get_insp_onset(nasal_trace):
-    '''
+def get_insp_onset(nasal_trace,order=2,direction=1,thresh=3):
+    """
     Return the times of inspiration onset
 
-    :param nasal_trace:
-    :return insp_onset: returns the index in nasal_trace of the inspiration onsets
-    '''
-    smooth = savgol_filter(nasal_trace, 101, 1)
-    diff2 = np.diff(savgol_filter(np.diff(smooth), 101, 1))
-    insp_onset = find_peaks(diff2, prominence=np.std(diff2) * 3)[0]
+    :param nasal_trace: nasal thermistor trace
+    :param order: Use first or second derivative (1,2)
+    :param direction: do we expect inspiration to be up or down (1,-1)in the trace?
+    :return: samples of inspiration onset
+    """
+
+    direction = np.sign(direction)
+    d_nasal = direction*savgol_filter(np.diff(nasal_trace),501,1)
+    diff2 = savgol_filter(np.diff(d_nasal),501,1)
+    if order==1:
+        insp_onset = find_peaks(d_nasal, prominence=np.std(d_nasal) * thresh)[0]
+    elif order==2:
+        insp_onset = find_peaks(diff2, prominence=np.std(diff2) * thresh)[0]
+    else:
+        raise NotImplemented('Only order 1 or 2 is implemented')
     return(insp_onset)
 
 
@@ -111,13 +123,11 @@ def get_PD_from_hist(theta_k,rate):
     return theta,L_dir
 
 
-def angular_response_hist(angular_var, sp, use_flags, nbins=100,min_obs=5):
+def angular_response_hist(angular_var, sp, nbins=100,min_obs=5):
     '''
     Given an angular variable that varies on -pi:pi,
     returns the probability of observing a spike (or gives a spike rate) normalized by
     the number of observations of that angular variable.
-
-    Migrated from whisker work. May need to be refactored to be more general
 
     INPUTS: angular var -- either a numpy array or a neo analog signal. Should be 1-D
             sp -- type: neo.core.SpikeTrain, numpy array. Sp can either be single spikes or a rate
@@ -127,36 +137,21 @@ def angular_response_hist(angular_var, sp, use_flags, nbins=100,min_obs=5):
                 L_dir -- The preferred direction tuning strength (1-CircVar)
     '''
 
-    # Overloaded for neo object or array
-    if type(angular_var)==neo.core.analogsignal.AnalogSignal:
-        angular_var = angular_var.magnitude
-    if angular_var.ndim==2:
-        if angular_var.shape[1] == 1:
-            angular_var = angular_var.ravel()
-        else:
-            raise Exception('Angular var must be able to be unambiguously converted into a vector')
 
     if type(nbins)==int:
         bins = np.linspace(-np.pi,np.pi,nbins+1,endpoint=True)
+    else:
+        bins = nbins
     # not nan is a list of finite sample indices, rather than a boolean mask. This is used in computing the posterior
-    not_nan = np.where(np.logical_and(np.isfinite(angular_var),use_flags))[0]
+    not_nan = np.where(np.isfinite(angular_var))[0]
     prior,prior_edges = np.histogram(angular_var[not_nan], bins=bins)
     prior[prior < min_obs] = 0
     # allows the function to take a spike train or a continuous rate to get the posterior
-    if type(sp)==neo.core.spiketrain.SpikeTrain:
-        spt = sp.times.magnitude.astype('int')
-        idx = [x for x in spt if x in not_nan]
-        posterior, theta_k = np.histogram(angular_var[idx], bins=bins)
-    else:
-        posterior, theta_k = np.histogram(angular_var[not_nan], weights=sp[not_nan], bins=bins)
+    posterior, theta_k = np.histogram(angular_var[not_nan], weights=sp[not_nan], bins=bins)
 
     #
     rate = np.divide(posterior,prior,dtype='float32')
     theta,L_dir = get_PD_from_hist(theta_k[:-1],rate)
 
     return rate,theta_k,theta,L_dir
-
-
-
-
 
