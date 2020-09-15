@@ -9,6 +9,9 @@
 #PBS -e /active/ramirez_j/ramirezlab/nbush/logs
 #PBS -o /active/ramirez_j/ramirezlab/nbush/logs
 
+# USAGE:
+# qsub -v fn=</path/to/ap.bin> run_kilosort.sh
+
 
 module load cuda80/blas/8.0.61
 source activate opioid
