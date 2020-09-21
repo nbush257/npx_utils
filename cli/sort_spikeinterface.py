@@ -45,7 +45,7 @@ def main(fn,output_dir):
     params['minFR'] = 0.02
     params['minfr_goodchannels'] = 0
     params['car'] = False
-    params['NT'] = 32*1024 + params['ntbuff']
+    params['NT'] = 32*512 + params['ntbuff']
     print('='*50)
     print('Running Kilosort2')
     print('='*50)
