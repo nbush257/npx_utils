@@ -3,9 +3,8 @@ import sys
 import pandas as pd
 import os
 import numpy as np
-import readSGLX
+from . import readSGLX as readSGLX
 from pathlib import Path
-sys.path.append('../')
 from utils.ephys.signal import binary_onsets
 
 def get_tvec(x_sync,sync_timestamps,sr):
