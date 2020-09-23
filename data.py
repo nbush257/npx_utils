@@ -5,11 +5,8 @@ import glob
 import pandas as pd
 import os
 import numpy as np
+from . import readSGLX as readSGLX
 from pathlib import Path
-sys.path.append('../')
-sys.path.append(os.environ['PROJ'])
-sys.path.append(os.path.join(os.environ['PROJ'],'npx_utils'))
-import readSGLX
 from utils.ephys.signal import binary_onsets
 import utils.burst as burst
 
