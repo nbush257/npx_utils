@@ -5,7 +5,9 @@ import os
 import numpy as np
 import readSGLX
 from pathlib import Path
+
 sys.path.append('../')
+sys.path.append('/active/ramirez_j/ramirezlab/nbush/projects')
 from utils.ephys.signal import binary_onsets
 
 def get_tvec(x_sync,sync_timestamps,sr):
