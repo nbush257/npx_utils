@@ -71,8 +71,8 @@ def create_spike_dict(ks2_dir,clus_id=None):
     st_fn = os.path.join(ks2_dir,'spike_times_sec.npy')
     sc_fn = os.path.join(ks2_dir,'spike_clusters.npy')
     amp_fn = os.path.join(ks2_dir,'amplitudes.npy')
-    ks_label = pd.read_csv(os.path.join(ks2_dir,'cluster_KSLabel.tsv'),delimiter='\t')
-    group = pd.read_csv(os.path.join(ks2_dir,'cluster_group.tsv'),delimiter='\t')
+    # ks_label = pd.read_csv(os.path.join(ks2_dir,'cluster_KSLabel.tsv'),delimiter='\t')
+    # group = pd.read_csv(os.path.join(ks2_dir,'cluster_group.tsv'),delimiter='\t')
 
     st = np.load(st_fn)
     sc = np.load(sc_fn)
