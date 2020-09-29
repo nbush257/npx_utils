@@ -1,0 +1,102 @@
+---
+title: "PCA"
+author: "Glenn and Jason"
+date: "9/2/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(plyr)
+
+PATH = "/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-12/m202012_g11/m202012_g11_imec0/"
+
+cluster_metrics <- read.csv(paste0(PATH, "cluster_metrics.csv"), stringsAsFactors = F)
+waveform_metrics <- read.csv(paste0(PATH, "waveform_metrics.csv"), stringsAsFactors = F)
+overlap_summary <- read.csv(paste0(PATH, "overlap_summary.csv"), stringsAsFactors = F, header = F)
+cluster_KSLabel <- read.delim(paste0(PATH, "cluster_KSLabel.tsv"), stringsAsFactors = F)
+cluster_group <- read.delim(paste0(PATH, "cluster_group.tsv"), stringsAsFactors = F)
+cluster_ContamPct <- read.delim(paste0(PATH, "cluster_ContamPct.tsv"), stringsAsFactors = F)
+```
+
+```{r}
+library(reticulate)
+np <- import("numpy")
+depth <- np$load(paste0(PATH, "fmat.npy"))
+```
+
+```{r}
+dim(cluster_metrics)
+dim(waveform_metrics)
+dim(overlap_summary)
+dim(cluster_KSLabel)
+dim(cluster_group)
+dim(cluster_ContamPct)
+```
+
+```{r}
+head(cluster_metrics)
+head(waveform_metrics)
+head(overlap_summary)
+head(cluster_KSLabel)
+head(cluster_group)
+head(cluster_ContamPct)
+```
+```{r}
+cluster_metrics$cluster_id==waveform_metrics$cluster_id
+```
+
+```{r}
+#dat3 <- merge(cluster_metrics, waveform_metrics, by = "cluster_id", all = T)
+dat3 <- plyr::join(cluster_metrics, waveform_metrics, by = "cluster_id")
+dim(dat3)
+```
+
+```{r}
+head(dat3)
+```
+
+```{r}
+colnames(cluster_metrics)
+print("")
+colnames(waveform_metrics)
+print("")
+colnames(overlap_summary)
+print("")
+colnames(cluster_KSLabel)
+print("")
+colnames(cluster_group)
+print("")
+colnames(cluster_ContamPct)
+print("")
+colnames(dat3)
+```
+
+```{r}
+d <- dat3[,c(3,5,6,7,9,18:21)]
+rownames(d) <- dat3$cluster_id
+dim(d)
+```
+
+```{r}
+head(d)
+```
+
+```{r}
+d <- na.omit(d)
+myPCA <- prcomp(t(d), retx = T, center = T, scale. = T)
+X <- data.frame(myPCA$x)
+head(X)
+```
+
+```{r}
+plot(X$PC1, X$PC2)
+plot(X$PC1, X$PC2, type ="n")
+text(X$PC1, X$PC2, labels = rownames(d), cex = .6)
+plot(X$PC3, X$PC4)
+
+```
+
