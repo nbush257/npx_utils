@@ -7,6 +7,8 @@ import os
 import numpy as np
 from . import readSGLX as readSGLX
 from pathlib import Path
+sys.path.append('../')
+sys.path.append('/active/ramirez_j/ramirezlab/nbush/projects')
 from utils.ephys.signal import binary_onsets
 import utils.burst as burst
 
