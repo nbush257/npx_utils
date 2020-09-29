@@ -1,2 +1,7 @@
+*.ipynb*
+.idea/*
+.idea/*.iml
+.idea/*.xml
+.pyc
+__pycache__
 .ipynb_checkpoints/
-__pycache__/
