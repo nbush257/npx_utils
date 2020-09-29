@@ -1,0 +1,8 @@
+*.ipynb*
+.idea/*
+.idea/*.iml
+.idea/*.xml
+.pyc
+__pycache__
+
+
