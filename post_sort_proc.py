@@ -2,6 +2,7 @@ from scipy.signal import hilbert,savgol_filter,find_peaks
 import pandas as pd
 import numpy as np
 import os
+from sklearn.mixture import GaussianMixture as GM
 
 
 
@@ -154,4 +155,24 @@ def angular_response_hist(angular_var, sp, nbins=100,min_obs=5):
     theta,L_dir = get_PD_from_hist(theta_k[:-1],rate)
 
     return rate,theta_k,theta,L_dir
+
+
+def burstiness(spiketimes,thresh=0.01):
+    '''
+    :param spiketimes: vector of spike times for a single neuron
+    :param thresh: Seperation of means (in seconds) required to classify the isi histograms as bimodal (default=10ms)
+    :return: is_burst, clf: Boolean is a burster or not, clf the GMM that gave rise to that result
+    :rtype:
+    '''
+    isi = np.diff(spiketimes)
+    clf = GM(2)
+    clf.fit_predict(np.log(isi[:,np.newaxis]))
+    exp_means = np.exp(clf.means_)
+    mean_diff = exp_means[0]-exp_means[1]
+    if np.abs(mean_diff)>thresh:
+        is_burst = True
+    else:
+        is_burst = False
+    return(is_burst,clf)
+
 
