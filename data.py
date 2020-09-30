@@ -5,12 +5,16 @@ import glob
 import pandas as pd
 import os
 import numpy as np
-from . import readSGLX as readSGLX
+try:
+    from . import readSGLX as readSGLX
+except:
+    import readSGLX
 from pathlib import Path
 sys.path.append('../')
 sys.path.append('/active/ramirez_j/ramirezlab/nbush/projects')
 from utils.ephys.signal import binary_onsets
 import utils.burst as burst
+import utils.brian_utils.postproc as bup
 
 def get_tvec(x_sync,sync_timestamps,sr):
     '''
@@ -66,6 +70,7 @@ def create_spike_dict(ks2_dir,clus_id=None):
     load in the spike times from an npy file and seperate into a dict
     where each cluster is a field. Optionally keep only certain clusters
 
+
     :param ks2_dir: directory of the kilosort output
     :param clus_id: List of clusters to keep (default keeps all)
     :return: spiketimes dict
@@ -99,6 +104,63 @@ def create_spike_dict(ks2_dir,clus_id=None):
         spike_dict[clu] = temp
 
     return(spike_dict)
+
+
+def create_spike_df(ks2_dir):
+    '''
+    Loads in the spike time data to create a dataframe
+    Filters out only to the "good" cells
+    :param ks2_dir:
+    :return: spike_df - pandas dataframe of cluster data
+    '''
+    spike_df = pd.DataFrame(create_spike_dict(ks2_dir)).T
+    spike_df = spike_df[spike_df.group=='good']
+    spike_df.drop('amp',axis=1,inplace=True)
+    spike_df.reset_index(inplace=True)
+    spike_df.rename({'index':'clu_id'},axis=1)
+
+    return(spike_df)
+
+
+def get_concatenated_spikes(ks2_dir):
+    '''
+    Built on top of create_spike_dict and create_spike_df
+    Returns a minimal set of concatenated spike data. Probably the most useful
+    way to import spike data
+    :param ks2_dir:
+    :type ks2_dir:
+    :return:
+    :rtype:
+    '''
+
+    spike_df = create_spike_df(ks2_dir)
+
+
+    sp = []
+    sc = []
+    depth = []
+    for ii,data in spike_df.iterrows():
+        sp_temp = data['ts']
+        sc_temp = np.repeat(ii,len(sp_temp))
+        depth_temp = np.repeat(data['depth'],len(sp_temp))
+
+        sp.append(sp_temp)
+        sc.append(sc_temp)
+        depth.append(depth_temp)
+    sp = np.hstack(sp)
+    sc = np.hstack(sc)
+    depth = np.hstack(depth)
+
+    idx = np.argsort(sp)
+    sp = sp[idx]
+    sc = sc[idx].astype('int')
+    depth = depth[idx]
+
+    cat_spike_dict = pd.DataFrame()
+    cat_spike_dict['ts'] = sp
+    cat_spike_dict['cell_id'] = sc
+    cat_spike_dict['depth'] = depth
+    return(cat_spike_dict)
 
 
 def export_goodcell_csv(ks2_dir,ni_bin_fn,ecell_chan=2):

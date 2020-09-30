@@ -1,8 +1,11 @@
 from scipy.signal import hilbert,savgol_filter,find_peaks
+from tqdm import tqdm
+import scipy.signal
 import pandas as pd
 import numpy as np
 import os
 from sklearn.mixture import GaussianMixture as GM
+from sklearn.preprocessing import MinMaxScaler
 
 
 
@@ -157,13 +160,15 @@ def angular_response_hist(angular_var, sp, nbins=100,min_obs=5):
     return rate,theta_k,theta,L_dir
 
 
-def burstiness(spiketimes,thresh=0.01):
+def calc_is_bursting(spiketimes,thresh=0.05):
     '''
     :param spiketimes: vector of spike times for a single neuron
     :param thresh: Seperation of means (in seconds) required to classify the isi histograms as bimodal (default=10ms)
     :return: is_burst, clf: Boolean is a burster or not, clf the GMM that gave rise to that result
     :rtype:
     '''
+    if len(spiketimes)<200:
+        return(False,None)
     isi = np.diff(spiketimes)
     clf = GM(2)
     clf.fit_predict(np.log(isi[:,np.newaxis]))
@@ -175,4 +180,58 @@ def burstiness(spiketimes,thresh=0.01):
         is_burst = False
     return(is_burst,clf)
 
+
+def bin_spiketrains(ts,idx,binsize=.05,start_time=0,max_time=None):
+    cell_ids = np.arange(len(np.unique(idx)))
+    if max_time is None:
+        max_time = np.max(ts)
+
+    bins = np.arange(start_time, max_time, binsize)
+    raster = np.empty([len(cell_ids), len(bins)])
+    # Remove spikes that happened before the start time
+    idx = idx[ts>start_time]
+    ts = ts[ts>start_time]
+    # Remove spikes that happened after the max time
+    idx = idx[ts<max_time]
+    ts = ts[ts<max_time]
+
+    # Loop through cells
+    for cell in cell_ids:
+        cell_ts = ts[idx==cell]
+        raster[cell, :-1]= np.histogram(cell_ts, bins)[0]
+
+    return(raster,cell_ids,bins)
+
+
+def find_all_bursters(ts,idx,thresh=0.05):
+
+    is_burster = np.zeros(np.max(idx)+1,dtype='bool')
+    for cell in np.unique(idx):
+        is_burster[cell] = calc_is_bursting(ts[idx==cell],thresh=thresh)[0]
+
+
+
+def calc_corr_mat(raster,fill_val=0):
+    '''
+    Calculate the cross correlation of all spike trains, allowing for lagged peaks
+    :param raster: matrix of spike rates [cells x time]
+    :param fill_val: value to fill when a cell does not spike
+    :return: corr_mat: pairwise cell cross correlation maximums
+    '''
+    corr_mat = np.zeros([raster.shape[0],raster.shape[0]])
+
+    for ii in tqdm(range(raster.shape[0])):
+        for jj in range(raster.shape[0]):
+            t1 = raster[ii]
+            t2 = raster[jj]
+            if np.logical_or(np.sum(t1)==0,np.sum(t2)==0):
+                corr_mat[ii,jj]=fill_val
+                continue
+
+            norm_val = np.sqrt(np.dot(t1, t1) * np.dot(t2, t2))
+
+            xcorr =np.correlate(t1,t2)/norm_val
+            corr_mat[ii,jj] = np.max(xcorr)
+
+    return(corr_mat)
 
