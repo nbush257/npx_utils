@@ -157,7 +157,7 @@ def angular_response_hist(angular_var, sp, nbins=100,min_obs=5):
     return rate,theta_k,theta,L_dir
 
 
-def get_opto_tagged(ts,pulse_on,thresh=0.9,lockout=2,max=9):
+def get_opto_tagged(ts,pulse_on,thresh=0.25,lockout=2,max=9):
     '''
 
     :param ts: Spike times
@@ -177,7 +177,7 @@ def get_opto_tagged(ts,pulse_on,thresh=0.9,lockout=2,max=9):
 
     post = np.mean(post)
     pre = np.mean(pre)
-    normed_spikes = (post / (pre + post))
+    normed_spikes = ((post-pre) / (pre + post))
     if normed_spikes>thresh:
         is_tagged = True
     else:
