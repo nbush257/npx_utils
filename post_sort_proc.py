@@ -214,8 +214,8 @@ def pop_is_mod(spiketimes,cell_id,events,**kwargs):
             mod_depth: the modulation depth of each cell
     '''
 
-    is_mod = np.zeros(np.max(cell_id),dtype='bool')
-    mod_depth = np.zeros(np.max(cell_id))
+    is_mod = np.zeros(np.max(cell_id)+1,dtype='bool')
+    mod_depth = np.zeros(np.max(cell_id)+1)
     for ii,cell in enumerate(np.unique(cell_id)):
         sts = spiketimes[cell_id==cell]
         if len(sts)<10:
