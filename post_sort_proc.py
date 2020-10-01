@@ -204,8 +204,6 @@ def calc_is_mod(ts,events,pre_win=-0.1,post_win=.150):
 def pop_is_mod(spiketimes,cell_id,events,**kwargs):
     '''
     wraps to calc is mod to allow population calculations of modulation by event
-    NOTE: current implementation uses a list appending schema, so the neuron identity will become sequential
-        if pulling in such that each neuron is id'd to a cluster, there may be gaps in the cell index
 
     :param spiketimes: array of all spike times across all cells (in seconds)
     :param cell_id: array of cell ids from which the corresponding spike in spiketimes is referenced
@@ -216,18 +214,18 @@ def pop_is_mod(spiketimes,cell_id,events,**kwargs):
             mod_depth: the modulation depth of each cell
     '''
 
-    is_mod = []
-    mod_depth = []
-    for cell in np.unique(cell_id):
+    is_mod = np.zeros(np.max(cell_id),dtype='bool')
+    mod_depth = np.zeros(np.max(cell_id))
+    for ii,cell in enumerate(np.unique(cell_id)):
         sts = spiketimes[cell_id==cell]
         if len(sts)<10:
             continue
         cell_is_mod,cell_mod_depth = calc_is_mod(sts,events,**kwargs)
-        is_mod.append(cell_is_mod)
-        mod_depth.append(cell_mod_depth)
+        is_mod[ii] = cell_is_mod
+        mod_depth[ii] = cell_mod_depth
 
-    is_mod = np.array(is_mod)
-    mod_depth = np.array(mod_depth)
+    mod_depth[np.isnan(mod_depth)] = 0
+
     return(is_mod,mod_depth)
 
 
