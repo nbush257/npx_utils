@@ -155,3 +155,34 @@ def angular_response_hist(angular_var, sp, nbins=100,min_obs=5):
 
     return rate,theta_k,theta,L_dir
 
+def bin_trains(ts,idx,max_time=None,binsize=0.05,start_time=5):
+    '''
+    bin_trains(ts,idx,n_neurons,binsize=0.05,start_time=5):
+    :param ts: Array of all spike times across all neurons
+    :param idx: cell index
+    :param binsize:
+    :param start_time:
+    :return:
+    '''
+    if max_time is None:
+        max_time = np.max(ts)
+
+    n_neurons = np.max(idx)+1
+    cell_id = np.arange(n_neurons)
+    bins = np.arange(start_time, max_time, binsize)
+    raster = np.empty([n_neurons, len(bins)])
+    # Remove spikes that happened before the start time
+    idx = idx[ts>start_time]
+    ts = ts[ts>start_time]
+
+    # Remove spikes that happened after the max time
+    idx = idx[ts<max_time]
+    ts = ts[ts<max_time]
+
+    # Loop through cells
+    for cell in cell_id:
+        cell_ts = ts[idx==cell]
+        raster[cell, :-1]= np.histogram(cell_ts, bins)[0]
+    return(raster,cell_id,bins)
+
+
