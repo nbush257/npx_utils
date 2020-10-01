@@ -1,7 +1,11 @@
 from scipy.signal import hilbert,savgol_filter,find_peaks
+import matplotlib.pyplot as plt
+import scipy.stats
 import pandas as pd
 import numpy as np
 import os
+from tqdm import tqdm
+from spykes.plot import NeuroVis
 
 
 
@@ -154,4 +158,79 @@ def angular_response_hist(angular_var, sp, nbins=100,min_obs=5):
     theta,L_dir = get_PD_from_hist(theta_k[:-1],rate)
 
     return rate,theta_k,theta,L_dir
+
+
+def calc_is_mod(ts,events,pre_win=-0.1,post_win=.150):
+    '''
+    Calculate whether the spike rate of a neuron is altered after an event
+
+    :param ts: all spike times of a given neuron
+    :param events: event times
+    :param pre_win: window before event to consider (must be negative) in seconds
+    :param post_win: window_after event to consider (must be positive) in seconds
+    :return:
+            is_mod: boolean result of wilcoxon rank sum test
+            mod_depth: mean firing rate modulation (post-pre)/(pre+post)
+    '''
+    neuron = NeuroVis(ts)
+    df= pd.DataFrame()
+    df['event'] = events
+    pre = neuron.get_spikecounts('event', df=df, window=[pre_win*1000, 0])
+    post = neuron.get_spikecounts('event', df=df, window=[0, post_win*1000])
+
+    # Catch instances of fewer than 100 spikes
+    if np.sum(pre+post)<100:
+        is_mod=False
+        effect = np.nan
+        return(is_mod,effect)
+
+    # Normalize for time
+    pre =pre / np.abs(pre_win)
+    post=post / post_win
+
+    # Calculate signifigance
+    p = scipy.stats.wilcoxon(pre,post).pvalue
+
+    if p<0.05:
+        is_mod=True
+    else:
+        is_mod=False
+
+
+    effect = np.nanmean((post-pre)/(post+pre))
+    return(is_mod,effect)
+
+
+def pop_is_mod(spiketimes,cell_id,events,**kwargs):
+    '''
+    wraps to calc is mod to allow population calculations of modulation by event
+    NOTE: current implementation uses a list appending schema, so the neuron identity will become sequential
+        if pulling in such that each neuron is id'd to a cluster, there may be gaps in the cell index
+
+    :param spiketimes: array of all spike times across all cells (in seconds)
+    :param cell_id: array of cell ids from which the corresponding spike in spiketimes is referenced
+    :param events: times of events to consider (in seconds)
+    :param kwargs: keywords passed to calc_is_mod (pre_win,post_win)
+    :return:
+            is_mod: boolean array of whether a given cell is modulated
+            mod_depth: the modulation depth of each cell
+    '''
+
+    is_mod = []
+    mod_depth = []
+    for cell in np.unique(cell_id):
+        sts = spiketimes[cell_id==cell]
+        if len(sts)<10:
+            continue
+        cell_is_mod,cell_mod_depth = calc_is_mod(sts,events,**kwargs)
+        is_mod.append(cell_is_mod)
+        mod_depth.append(cell_mod_depth)
+
+    is_mod = np.array(is_mod)
+    mod_depth = np.array(mod_depth)
+    return(is_mod,mod_depth)
+
+
+
+
 
