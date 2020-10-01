@@ -1,4 +1,7 @@
 """Routines for data import and manipulation."""
+import neo
+import elephant
+import quantities as pq
 import sys
 import csv
 import glob
@@ -204,6 +207,16 @@ def export_goodcell_csv(ks2_dir,ni_bin_fn,ecell_chan=2):
     writer.save()
 
 
+def create_neo_trains(ks2_dir):
+   cat_spikes = get_concatenated_spikes(ks2_dir)
+   train_list = []
+   max_time = cat_spikes['ts'].max()
+   for ii in np.unique(cat_spikes.cell_id):
+       ts = cat_spikes[cat_spikes.cell_id==ii]['ts'].values * pq.second
+       dum = neo.spiketrain.SpikeTrain(ts,max_time)
+       train_list.append(dum)
+
+   return(train_list)
 
 
 
