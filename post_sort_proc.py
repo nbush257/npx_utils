@@ -182,38 +182,55 @@ def bin_spiketrains(ts,idx,binsize=.05,start_time=0,max_time=None):
     return(raster,cell_ids,bins)
 
 
-def calc_is_bursting(spiketimes,thresh=3,max_small_IBI=0.02,max_long_IBI=5.):
+def calc_is_bursting(spiketimes,thresh=3,max_small_ISI=0.02,max_long_ISI=5.,max_abs_ISI=2):
     '''
     :param spiketimes: vector of spike times for a single neuron
     :param thresh: Seperation of means (in seconds) required to classify the isi histograms as bimodal (default=10ms)
     :return: is_burst, clf: Boolean is a burster or not, clf the GMM that gave rise to that result
     :rtype:
     '''
-    if len(spiketimes)<20:
-        return(False,None)
+    if len(spiketimes)<100:
+        return(False)
     isi = np.diff(spiketimes)
-    clf = GM(2)
-    clf.fit_predict(np.log(isi[:,np.newaxis]))
-    exp_means = np.exp(clf.means_)
-    exp_means = np.sort(exp_means)
-    mean_diff = exp_means[1]/exp_means[0]
+    nspikes = len(spiketimes)
+    hts, bins = np.histogram(np.log(isi), bins=100)
 
-    if exp_means[0]>max_small_IBI:
+    mode_idx = scipy.signal.argrelmax(np.log(hts), order=10)[0]
+
+    mode_height = hts[mode_idx]
+    idx = np.argsort(mode_height)[::-1]
+    top_modes = np.exp(bins[mode_idx[idx]])[:2]
+    top_modes = np.sort(top_modes)
+
+    # kick out any neurons that are not firing for a while
+    max_ISI = np.percentile(np.exp(isi),99)
+    if max_ISI>max_abs_ISI:
+        return(False)
+
+
+    # ratio of long ISI mode to short ISI mode. If large, scell is burstier
+    if len(top_modes)<2:
+        return(False)
+
+    mean_diff = top_modes[1]/top_modes[0]
+
+    if top_modes[0]>max_small_ISI:
         is_burst=False
-    elif exp_means[1]>max_long_IBI:
+    elif top_modes[1]>max_long_ISI:
         is_burst=False
-    elif np.abs(mean_diff)>thresh:
+    elif mean_diff>thresh:
         is_burst = True
     else:
         is_burst = False
-    return(is_burst,clf)
+    return(is_burst)
 
 
 def find_all_bursters(ts,idx,**kwargs):
 
-    is_burster = np.zeros(np.max(idx)+1,dtype='bool')
+    is_burster = np.zeros(np.max(idx)+1)
     for cell in np.unique(idx):
-        is_burster[cell] = calc_is_bursting(ts[idx==cell],**kwargs)[0]
+        is_burster[cell] = calc_is_bursting(ts[idx==cell],**kwargs)
 
     return(is_burster)
+
 
