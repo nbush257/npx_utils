@@ -1,4 +1,5 @@
 from scipy.signal import hilbert,savgol_filter,find_peaks
+import spykes
 import pandas as pd
 import numpy as np
 import os
@@ -154,4 +155,37 @@ def angular_response_hist(angular_var, sp, nbins=100,min_obs=5):
     theta,L_dir = get_PD_from_hist(theta_k[:-1],rate)
 
     return rate,theta_k,theta,L_dir
+
+
+def get_opto_tagged(ts,pulse_on,thresh=0.9,lockout=2,max=9):
+    '''
+
+    :param ts: Spike times
+    :param pulse_on: opto onset times
+    :param thresh: How many spikes need to be post stimulus to count as tagges
+    :param lockout: time window around onset to exclude (for light artifacts)
+    :param max: max time window to consider
+    :return: is_tagged: boolean if this neuron has been classified as optotagged
+    '''
+    neuron = spykes.NeuroVis(ts)
+    df = pd.DataFrame()
+    df['opto'] = pulse_on
+    pre = neuron.get_spikecounts(event='opto', df=df, window=[-max, -lockout])
+    post = neuron.get_spikecounts(event='opto', df=df, window=[lockout, max])
+
+    tot_spikes = np.sum(post)
+
+    post = np.mean(post)
+    pre = np.mean(pre)
+    normed_spikes = (post / (pre + post))
+    if normed_spikes>thresh:
+        is_tagged = True
+    else:
+        is_tagged= False
+    # If the number of spikes is less than 85% of the number of stimulations, do not tag
+    if tot_spikes<.85*len(pulse_on):
+        is_tagged=False
+    return(is_tagged)
+
+
 
