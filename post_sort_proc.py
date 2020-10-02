@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 
 
@@ -223,10 +224,22 @@ def raster2tensor(raster,raster_bins,events,pre = .100,post = .200):
     return(raster_T,bins)
 
 
-def get_event_triggered_st(ts,events,pre_win,post_win):
+def get_event_triggered_st(ts,events,idx,pre_win,post_win):
     D = ts-events[:,np.newaxis]
-    mask = np.logical_and(D<-pre_win,D>post_win)
+    mask = np.logical_or(D<-pre_win,D>post_win)
     D[mask] = np.nan
+    pop = []
+    for ii in tqdm(np.unique(idx)):
+        trains = []
+        for jj in range(len(events)):
+            sts = D[jj,idx==ii]
+            sts = sts[np.isfinite(sts)]
+            trains.append(sts)
+
+        pop.append(trains)
+    return(pop)
+
+
 
 
 
