@@ -244,14 +244,14 @@ def get_event_triggered_st(ts,events,idx,pre_win,post_win):
 
 
 if has_tt:
-    def get_best_TCA(TT,plot_tgl=True):
+    def get_best_TCA(TT,max_rank=15,plot_tgl=True):
         ''' Fit ensembles of tensor decompositions.
             Returns the best model with the fewest parameters
             '''
         methods = (
             'ncp_hals',  # fits nonnegative tensor decomposition.
         )
-        ranks = range(1,15)
+        ranks = range(1,max_rank+1)
         ensembles = {}
         m = methods[0]
         ensembles[m] = tt.Ensemble(fit_method=m, fit_options=dict(tol=1e-4))
@@ -284,7 +284,7 @@ if has_tt:
             axx = ax.twinx()
             tt.plot_objective(ensembles[m],ax=axx,**plot_opts2)
         mm = []
-        for ii in range(1,15):
+        for ii in range(1,max_rank+1):
             mm.append(np.median(ensembles[m].objectives(ii)))
         mm = 1-np.array(mm)
         best = np.argmax(np.diff(np.diff(mm)))+1
