@@ -1,4 +1,11 @@
 from scipy.signal import hilbert,savgol_filter,find_peaks
+from tqdm import tqdm
+import scipy.signal
+import pandas as pd
+import numpy as np
+import os
+from sklearn.mixture import GaussianMixture as GM
+from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
 import scipy.stats
 import pandas as pd
@@ -158,6 +165,80 @@ def angular_response_hist(angular_var, sp, nbins=100,min_obs=5):
     theta,L_dir = get_PD_from_hist(theta_k[:-1],rate)
 
     return rate,theta_k,theta,L_dir
+
+
+def bin_spiketrains(ts,idx,binsize=.05,start_time=0,max_time=None):
+    cell_ids = np.arange(len(np.unique(idx)))
+    if max_time is None:
+        max_time = np.max(ts)
+
+    bins = np.arange(start_time, max_time, binsize)
+    raster = np.empty([len(cell_ids), len(bins)])
+    # Remove spikes that happened before the start time
+    idx = idx[ts>start_time]
+    ts = ts[ts>start_time]
+    # Remove spikes that happened after the max time
+    idx = idx[ts<max_time]
+    ts = ts[ts<max_time]
+
+    # Loop through cells
+    for cell in cell_ids:
+        cell_ts = ts[idx==cell]
+        raster[cell, :-1]= np.histogram(cell_ts, bins)[0]
+
+    return(raster,cell_ids,bins)
+
+
+def calc_is_bursting(spiketimes,thresh=3,max_small_ISI=0.02,max_long_ISI=5.,max_abs_ISI=2):
+    '''
+    :param spiketimes: vector of spike times for a single neuron
+    :param thresh: Seperation of means (in seconds) required to classify the isi histograms as bimodal (default=10ms)
+    :return: is_burst, clf: Boolean is a burster or not, clf the GMM that gave rise to that result
+    :rtype:
+    '''
+    if len(spiketimes)<100:
+        return(False)
+    isi = np.diff(spiketimes)
+    nspikes = len(spiketimes)
+    hts, bins = np.histogram(np.log(isi), bins=100)
+
+    mode_idx = scipy.signal.argrelmax(np.log(hts), order=10)[0]
+
+    mode_height = hts[mode_idx]
+    idx = np.argsort(mode_height)[::-1]
+    top_modes = np.exp(bins[mode_idx[idx]])[:2]
+    top_modes = np.sort(top_modes)
+
+    # kick out any neurons that are not firing for a while
+    max_ISI = np.percentile(np.exp(isi),99)
+    if max_ISI>max_abs_ISI:
+        return(False)
+
+
+    # ratio of long ISI mode to short ISI mode. If large, scell is burstier
+    if len(top_modes)<2:
+        return(False)
+
+    mean_diff = top_modes[1]/top_modes[0]
+
+    if top_modes[0]>max_small_ISI:
+        is_burst=False
+    elif top_modes[1]>max_long_ISI:
+        is_burst=False
+    elif mean_diff>thresh:
+        is_burst = True
+    else:
+        is_burst = False
+    return(is_burst)
+
+
+def find_all_bursters(ts,idx,**kwargs):
+
+    is_burster = np.zeros(np.max(idx)+1)
+    for cell in np.unique(idx):
+        is_burster[cell] = calc_is_bursting(ts[idx==cell],**kwargs)
+
+    return(is_burster)
 
 
 def calc_is_mod(ts,events,pre_win=-0.1,post_win=.150):
