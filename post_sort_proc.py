@@ -341,4 +341,3 @@ def pop_is_mod(spiketimes,cell_id,events,**kwargs):
 
     return(is_mod,mod_depth)
 
-
