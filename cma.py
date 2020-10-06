@@ -128,7 +128,7 @@ def calculate_cma_original(ts):
 def isi_info(isi):
     '''
     Compute metrics from the ISI that are needed for the CMA computation
-    :param isi: vector of ISI's
+    :param isi: vector of ISIs in units of ms
     :return: info: a dictionary of needed statistics
     '''
     info = {}
@@ -137,9 +137,9 @@ def isi_info(isi):
     info['meanISI'] = np.mean(isi)
     info['stdISI'] = np.std(isi)
     info['medianISI'] = np.median(isi)
-    info['histISI'],bins = np.histogram(isi,20000)
+    info['histISI'] = np.histogram(isi,np.arange(20001))[0]
     info['cumhistISI'] = np.cumsum(info['histISI'])
-    info['CMAcurve'] = info['cumhistISI'] / bins[:-1]
+    info['CMAcurve'] = info['cumhistISI'] / np.arange(1,20001)
 
     if info['maxISI']>20000 or np.isnan(info['maxISI']):
         info['skewCMA'] = skew(info['CMAcurve'])
