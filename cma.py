@@ -9,8 +9,8 @@ from scipy.stats import skew
 def cma_detect_burst(ts, thresh=0.01, tail=1):
     '''
     :param ts: timestamps of a neuron (in ms!)
-    :param thresh: spikes within a burst must be closer together than this number to be considered a burts
-    :param tail:  not sure what this does yet NEB 20201005
+    :param thresh: burst threshold as computed by the ISI distribution
+    :param tail:  tail threshold as computed from the ISI distribution
     :return: D - dictionary of burst information:
         burst_starts
         burst_ends
@@ -109,11 +109,13 @@ def cma_detect_burst(ts, thresh=0.01, tail=1):
 
 def calculate_cma_original(ts):
     '''
-    Not finished
-    :param ts:
-    :type ts:
-    :return:
-    :rtype:
+    :param ts: list of spike timestamps in ms
+    :return: bursts dictionary
+                burst_starts
+                burst_ends
+                burst_durations
+                n_spikes_in_burst
+                burst_numbers
     '''
 
     isi = np.diff(ts)
@@ -137,11 +139,11 @@ def isi_info(isi):
     info['meanISI'] = np.mean(isi)
     info['stdISI'] = np.std(isi)
     info['medianISI'] = np.median(isi)
-    info['histISI'] = np.histogram(isi,np.arange(20001))[0]
+    info['histISI'],bins = np.histogram(isi,np.arange(20001))
     info['cumhistISI'] = np.cumsum(info['histISI'])
-    info['CMAcurve'] = info['cumhistISI'] / np.arange(1,20001)
+    info['CMAcurve'] = info['cumhistISI'] / bins[1:]
 
-    if info['maxISI']>20000 or np.isnan(info['maxISI']):
+    if info['maxISI']>20002 or np.isnan(info['maxISI']):
         info['skewCMA'] = skew(info['CMAcurve'])
     else:
         dum = np.ceil(info['maxISI']).astype('int')
@@ -152,7 +154,8 @@ def isi_info(isi):
 
 def skw2alpha(skw):
     '''
-    Needs testind
+    utlity function used in calculation of burstiness
+    computes the alpha values given the skew of the ISI distribution
     :param skw:
     :return:
     '''
@@ -176,7 +179,8 @@ def skw2alpha(skw):
 
 def alpha2thresh(cma_curve,bA,tA):
     '''
-    Needs testing
+    utlity function used in calculation of burstiness
+    computes the thresholds given the ISI distribution
 
     :param cma_curve:
     :param bA:
@@ -200,6 +204,29 @@ def alpha2thresh(cma_curve,bA,tA):
     return(bT,tT)
 
 
+def get_bursts(ts,mode = 's'):
+    '''
+    wrapper to the CMA burst algorithm that allows for ins and outs to be in
+    seconds or ms
+    Adds a metric that is the CV of the burst durations to indicate how regular the bursting is
+
+    :param ts: timestamps of the neuron's spiketimes
+    :param mode:  's' for inputs and outputs in seconds
+                    or 'ms' for millisecond. default = 's'
+    :return: burst dictionary
+    '''
+    if mode =='s':
+        ts_ms = ts*1000
+        bursts = calculate_cma_original(ts_ms)
+        bursts['burst_starts'] = bursts['burst_starts']/1000
+        bursts['burst_ends'] = bursts['burst_ends']/1000
+        bursts['burst_durations'] = bursts['burst_durations']/1000
+    elif mode == 'ms':
+        bursts = calculate_cma_original(ts)
+    else:
+        raise NotImplemented(f'Mode {mode} must be "s" or "ms"')
+    bursts['CV'] = np.std(bursts['burst_durations'])/np.mean(bursts['burst_durations'])
+    return(bursts)
 
 
 
