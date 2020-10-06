@@ -229,6 +229,56 @@ def get_bursts(ts,mode = 's'):
     return(bursts)
 
 
+def filter_bursts(bursts,min_dur=None,max_dur=None,min_spikes=None,min_postBI=None):
+    '''
+    new_bursts = filter_bursts(bursts,min_dur=None,max_dur=None,min_spikes=None,min_postBI=None):
+
+    Remove some bursts if they do not meet particular criteria
+    :param bursts: input burst dictionary
+    :param min_dur: minimum burst duration
+    :param max_dur: maximum burst duration
+    :param min_spikes: minimum number of spikes in a given burst
+    :param min_postBI: minimum amount of time until the next burst
+    :return: new_bursts - a copied burst dictionary with the errant bursts filtered out
+    '''
+
+    new_bursts = bursts.copy()
+    keep = np.ones(len(bursts['burst_durations']),'bool')
+    dur = bursts['burst_durations']
+    nspikes = bursts['n_spikes_in_burst']
+    postBI = np.concatenate([bursts['burst_starts'][1:] - bursts['burst_ends'][:-1],[np.nan]])
+    if min_dur is not None:
+        keep[dur<min_dur]=False
+    if max_dur is not None:
+        keep[dur>max_dur]=False
+    if min_spikes is not None:
+        keep[nspikes<min_spikes]=False
+    if min_postBI is not None:
+        keep[postBI<min_postBI]=False
+    new_bursts['burst_starts'] = bursts['burst_starts'][keep]
+    new_bursts['burst_ends'] = bursts['burst_ends'][keep]
+    new_bursts['burst_durations'] = bursts['burst_durations'][keep]
+    new_bursts['n_spikes_in_burst'] = bursts['n_spikes_in_burst'][keep]
+
+    new_bursts['CV'] = np.std(new_bursts['burst_durations'])/np.mean(new_bursts['burst_durations'])
+
+    # since we have filtered the bursts now, we are removing this metric.
+    # I dont know what it is for anyhow
+    # If we think it is useful it may take time to test the appropriate removal
+    # NEB 20201006
+
+    new_bursts['burst_numbers'] = []
+
+    return(new_bursts)
+
+
+
+
+
+
+
+
+
 
 
 
