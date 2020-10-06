@@ -218,9 +218,10 @@ def get_bursts(ts,mode = 's'):
     if mode =='s':
         ts_ms = ts*1000
         bursts = calculate_cma_original(ts_ms)
-        bursts['burst_starts'] = bursts['burst_starts']/1000
-        bursts['burst_ends'] = bursts['burst_ends']/1000
-        bursts['burst_durations'] = bursts['burst_durations']/1000
+        if len(bursts['burst_starts'])>0:
+            bursts['burst_starts'] = bursts['burst_starts']/1000
+            bursts['burst_ends'] = bursts['burst_ends']/1000
+            bursts['burst_durations'] = bursts['burst_durations']/1000
     elif mode == 'ms':
         bursts = calculate_cma_original(ts)
     else:
@@ -242,6 +243,8 @@ def filter_bursts(bursts,min_dur=None,max_dur=None,min_spikes=None,min_postBI=No
     :return: new_bursts - a copied burst dictionary with the errant bursts filtered out
     '''
 
+    if len(bursts['burst_starts'])==0:
+        return(bursts)
     new_bursts = bursts.copy()
     keep = np.ones(len(bursts['burst_durations']),'bool')
     dur = bursts['burst_durations']
