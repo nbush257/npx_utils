@@ -450,3 +450,59 @@ def pop_is_mod(spiketimes,cell_id,events,**kwargs):
 
     return(is_mod,mod_depth)
 
+def proc_pleth(pleth,tvec,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
+    '''
+    Calculates the inspiration onsets and offsets.
+    Only looks at positive deflections in the pleth
+    Takes find_peaks kwargs
+
+    :param pleth: Plethysmography data
+    :param tvec: Vector mapping samples to timestamps
+    :param width: Minimum width that the signal has to be above threshold to be considered an inspiration (s)
+    :param prominence: Miniumum prominence needed (see find_peaks) (v)
+    :param height: Minimum absolute height (v)
+    :param distance: Minimum time between inspirations (s)
+    :return:
+            pleth_on_t - timestamps of pleth onsets
+            pleth_data - dictionary of inspiration parameters:
+                on_samp:        Sample index of pleth onsets
+                off_samp:       Sample index of pleth onsets
+                amp:            Amplitude of pleth peak
+                duration_sec:   Duration of a pleth inspiration in seconds
+                duration_samp:  Duration of a pleth inspiration in seconds
+    '''
+
+    ## keep only positive pleth values to get inspirations
+    temp_pleth = pleth.copy()
+    temp_pleth[temp_pleth<0] = 0
+
+    # Sampling rate is the difference of the first 2 time samples
+    sr = 1/(tvec[1]-tvec[0])
+
+    # Get pleth peaks
+    pk_pleth = scipy.signal.find_peaks(temp_pleth,width=width*sr,prominence=prominence,height=height,distance=distance*sr)[0]
+    pleth_on,pleth_off = scipy.signal.peak_widths(temp_pleth,pk_pleth,rel_height=0.9)[2:]
+
+    # Map the on and off to ints to allow for indexing
+    pleth_on = pleth_on.astype('int')
+    pleth_off = pleth_off.astype('int')
+
+    # Map indices to values
+    pleth_on_t = tvec[pleth_on]
+    pleth_off_t = tvec[pleth_off]
+    pleth_amp = pleth[pk_pleth]
+
+    pleth_data = {}
+    pleth_data['on_samp'] = pleth_on
+    pleth_data['off_samp'] = pleth_off
+    pleth_data['on_sec'] = pleth_on_t
+    pleth_data['off_sec'] = pleth_off_t
+    pleth_data['amp'] = pleth_amp
+    pleth_data['duration_sec'] = pleth_off_t-pleth_on_t
+    pleth_data['duration_samp'] = pleth_off-pleth_on
+    pleth_data['pk_samp'] = pk_pleth.astype('int')
+    pleth_data['pk_time'] = tvec[pk_pleth.astype('int')]
+    pleth_data['postBI'] = np.hstack([pleth_on_t[1:]-pleth_off_t[:-1],[np.nan]])
+
+    return(pleth_on_t,pleth_data)
+
