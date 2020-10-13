@@ -1,20 +1,18 @@
 from scipy.signal import hilbert,savgol_filter,find_peaks
+try:
+    import tensortools as tt
+    has_tt=True
+except:
+    has_tt = False
+
 import spykes
-from tqdm import tqdm
 import scipy.signal
-import pandas as pd
-import numpy as np
-import os
-from sklearn.mixture import GaussianMixture as GM
-from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
 import scipy.stats
 import pandas as pd
 import numpy as np
-import os
 from tqdm import tqdm
 from spykes.plot import NeuroVis
-
 
 
 def nasal_to_phase(x):
@@ -168,6 +166,36 @@ def angular_response_hist(angular_var, sp, nbins=100,min_obs=5):
     return rate,theta_k,theta,L_dir
 
 
+def bin_trains(ts,idx,max_time=None,binsize=0.05,start_time=5):
+    '''
+    bin_trains(ts,idx,n_neurons,binsize=0.05,start_time=5):
+    :param ts: Array of all spike times across all neurons
+    :param idx: cell index
+    :param binsize:
+    :param start_time:
+    :return:
+    '''
+    if max_time is None:
+        max_time = np.max(ts)
+
+    # Keep neuron index correct
+    n_neurons = np.max(idx)+1
+    cell_id = np.arange(n_neurons)
+    bins = np.arange(start_time, max_time, binsize)
+    raster = np.empty([n_neurons, len(bins)])
+    # Remove spikes that happened before the start time
+    idx = idx[ts>start_time]
+    ts = ts[ts>start_time]
+    # Remove spikes that happened after the max time
+    idx = idx[ts<max_time]
+    ts = ts[ts<max_time]
+    # Loop through cells
+    for cell in cell_id:
+        cell_ts = ts[idx==cell]
+        raster[cell, :-1]= np.histogram(cell_ts, bins)[0]
+    return(raster,cell_id,bins)
+
+
 def get_opto_tagged(ts,pulse_on,thresh=0.25,lockout=2,max=9):
     '''
 
@@ -199,26 +227,107 @@ def get_opto_tagged(ts,pulse_on,thresh=0.25,lockout=2,max=9):
     return(is_tagged)
 
 
-def bin_spiketrains(ts,idx,binsize=.05,start_time=0,max_time=None):
-    cell_ids = np.arange(len(np.unique(idx)))
-    if max_time is None:
-        max_time = np.max(ts)
+def raster2tensor(raster,raster_bins,events,pre = .100,post = .200):
+    '''
 
-    bins = np.arange(start_time, max_time, binsize)
-    raster = np.empty([len(cell_ids), len(bins)])
-    # Remove spikes that happened before the start time
-    idx = idx[ts>start_time]
-    ts = ts[ts>start_time]
-    # Remove spikes that happened after the max time
-    idx = idx[ts<max_time]
-    ts = ts[ts<max_time]
 
-    # Loop through cells
-    for cell in cell_ids:
-        cell_ts = ts[idx==cell]
-        raster[cell, :-1]= np.histogram(cell_ts, bins)[0]
+    :param raster:
+    :param raster_bins:
+    :param events:
+    :param pre:
+    :param post:
+    :return:
+    '''
+    dt = np.round(np.mean(np.diff(raster_bins)),5)
+    trial_length = int(np.round((pre+post)/dt))
+    keep_events = events>(raster_bins[0]-pre)
+    events = events[keep_events]
+    keep_events = events<(raster_bins[-1]-post)
+    events = events[keep_events]
 
-    return(raster,cell_ids,bins)
+    raster_T = np.empty([trial_length,raster.shape[0],len(events)])
+
+    for ii,evt in enumerate(events):
+        t0 = evt-pre
+        t1 = evt+post
+        bin_lims = np.searchsorted(raster_bins,[t0,t1])
+        xx = raster[:,bin_lims[0]:bin_lims[0]+trial_length].T
+        raster_T[:,:,ii]= xx
+    bins = np.arange(-pre,post,dt)
+    return(raster_T,bins)
+
+
+def get_event_triggered_st(ts,events,idx,pre_win,post_win):
+    D = ts-events[:,np.newaxis]
+    mask = np.logical_or(D<-pre_win,D>post_win)
+    D[mask] = np.nan
+    pop = []
+    for ii in tqdm(np.unique(idx)):
+        trains = []
+        for jj in range(len(events)):
+            sts = D[jj,idx==ii]
+            sts = sts[np.isfinite(sts)]
+            trains.append(sts)
+
+        pop.append(trains)
+    return(pop)
+
+
+if has_tt:
+    def get_best_TCA(TT,max_rank=15,plot_tgl=True):
+        ''' Fit ensembles of tensor decompositions.
+            Returns the best model with the fewest parameters
+            '''
+        methods = (
+            'ncp_hals',  # fits nonnegative tensor decomposition.
+        )
+        ranks = range(1,max_rank+1)
+        ensembles = {}
+        m = methods[0]
+        ensembles[m] = tt.Ensemble(fit_method=m, fit_options=dict(tol=1e-4))
+        ensembles[m].fit(TT, ranks=ranks, replicates=10)
+
+        if plot_tgl:
+            plot_opts1 = {
+                'line_kw': {
+                    'color': 'black',
+                    'label': 'ncp_hals',
+                },
+                'scatter_kw': {
+                    'color': 'black',
+                    'alpha':0.2,
+                },
+            }
+            plot_opts2 = {
+                'line_kw': {
+                    'color': 'red',
+                    'label': 'ncp_hals',
+                },
+                'scatter_kw': {
+                    'color': 'red',
+                    'alpha':0.2,
+                },
+            }
+            plt.close('all')
+            fig = plt.figure
+            ax = tt.plot_similarity(ensembles[m],**plot_opts1)
+            axx = ax.twinx()
+            tt.plot_objective(ensembles[m],ax=axx,**plot_opts2)
+        mm = []
+        for ii in range(1,max_rank+1):
+            mm.append(np.median(ensembles[m].objectives(ii)))
+        mm = 1-np.array(mm)
+        best = np.argmax(np.diff(np.diff(mm)))+1
+        optimal = ensembles[m].results[ranks[best]]
+        dum_obj = 1
+        for decomp in optimal:
+            if decomp.obj<dum_obj:
+                best_decomp = decomp
+                dum_obj = decomp.obj
+
+        if plot_tgl:
+            axx.vlines(ranks[best],axx.get_ylim()[0],axx.get_ylim()[1],lw=3,ls='--')
+        return(best_decomp,[ax,axx])
 
 
 def calc_is_bursting(spiketimes,thresh=3,max_small_ISI=0.02,max_long_ISI=5.,max_abs_ISI=2):
