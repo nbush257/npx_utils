@@ -16,30 +16,33 @@ import numpy as np
 @click.argument('p_load')
 def main(p_load):
     nmperpx = []
+    print(p_load)
     for root,dir,files in os.walk(p_load):
-        try:
-            if len(dir)==0:
-                # print(root)
-                im_file = glob.glob(os.path.join(root,'*.tif'))[0]
-                print(f'Moving {im_file}')
-                xml_file = glob.glob(os.path.join(root,'*.xml'))[0]
-                parts = Path(root).parts
-                basename = parts[-2].replace('.vsi.Collection','')
-                dest = os.path.join(p_load,basename)+'.tiff'
-                shutil.copy(im_file,dest)
+        if len(dir)==0:
+            print(root)
+            im_file = glob.glob(os.path.join(root,'*.tif'))[0]
+            print(f'Moving {im_file}')
+            xml_file = glob.glob(os.path.join(root,'*.xml'))[0]
+            parts = Path(root).parts
+            basename = parts[-2].replace('.vsi.Collection','')
+            basename += f'_{parts[-1][-1]}'
+            dest = os.path.join(p_load,basename)+'.tiff'
+            shutil.copy(im_file,dest)
 
-                xml_dat = ET.parse(xml_file)
-                aa = './Groups_0/ImageTemplate/ImageAxis0Resolution'
-                bb = './Groups_0/ImageTemplate/ImageAxis1Resolution'
-                xscale = xml_dat.find(aa).attrib['value']
-                xscale = float(re.search('.*(?:\D|^)(\d+)',xscale).group())
-                yscale = xml_dat.find(bb).attrib['value']
-                yscale = float(re.search('.*(?:\D|^)(\d+)',yscale).group())
-        except:
-            xscale = np.nan
-            yscale = np.nan
+            xml_dat = ET.parse(xml_file)
+            aa = './Groups_0/ImageTemplate/ImageAxis0Resolution'
+            bb = './Groups_0/ImageTemplate/ImageAxis1Resolution'
+            xscale = xml_dat.find(aa).attrib['value']
+            xscale = float(re.search('.*(?:\D|^)(\d+)',xscale).group())
+            yscale = xml_dat.find(bb).attrib['value']
+            yscale = float(re.search('.*(?:\D|^)(\d+)',yscale).group())
+        # except:
+        #     print('bob')
+        #     print(root)
+        #     xscale = np.nan
+        #     yscale = np.nan
 
-        nmperpx.append([xscale,yscale])
+            nmperpx.append([xscale,yscale])
     nmperpx = np.array(nmperpx)
 
     sio.savemat(os.path.join(p_load,'nm_per_pixel.mat'),{'nmperpx':nmperpx})
