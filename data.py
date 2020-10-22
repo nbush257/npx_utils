@@ -19,6 +19,7 @@ from utils.ephys.signal import binary_onsets
 import utils.burst as burst
 import utils.brian_utils.postproc as bup
 from spykes.plot import NeuroVis,PopVis
+from tqdm import tqdm
 
 def get_tvec(x_sync,sync_timestamps,sr):
     '''
