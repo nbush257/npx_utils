@@ -262,3 +262,18 @@ def get_event_triggered_st(ts,events,idx,pre_win,post_win):
         pop.append(trains)
     return(pop)
 
+
+def create_spike_mat(spikes,dt = 0.001):
+    n_neurons = np.max(spikes.cell_id.unique())+1
+    max_t = np.max(spikes.ts)
+    t_vec = np.arange(0,max_t,dt)
+    X = np.zeros([n_neurons,len(t_vec)+1],dtype='bool')
+    for n in range(n_neurons):
+        sub_spikes = spikes[spikes.cell_id==n]
+        ts = sub_spikes.ts.values
+        idx = np.searchsorted(t_vec,ts)
+        X[n,idx] = 1
+
+    return(X)
+
+
