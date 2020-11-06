@@ -18,6 +18,8 @@ sys.path.append('/active/ramirez_j/ramirezlab/nbush/projects')
 from utils.ephys.signal import binary_onsets
 import utils.burst as burst
 import utils.brian_utils.postproc as bup
+from spykes.plot import NeuroVis,PopVis
+from tqdm import tqdm
 
 def get_tvec(x_sync,sync_timestamps,sr):
     '''
@@ -218,8 +220,60 @@ def create_neo_trains(ks2_dir):
 
    return(train_list)
 
+def create_spykes_pop(spikes,start_time=0,stop_time=np.inf):
+    '''
+    Convert a spikes dataframe to a Spykes neuron list and population object
+
+    :param spikes: dataframe of spike times "ts" in seconds and "cell_id" in long form.
+    :param start_time: ignore spikes before this time (s)
+    :param stop_time: ignore spikes after this time (s)
+    :return: neuron_list,pop
+    '''
+
+    sub_spikes = spikes[spikes['ts']>start_time]
+    sub_spikes = sub_spikes[sub_spikes['ts']<stop_time]
+
+    neuron_list = []
+    for ii, cell_id in enumerate(sub_spikes['cell_id'].unique()):
+        sub_df = sub_spikes[sub_spikes['cell_id'] == cell_id]
+        if(len(sub_df.ts))<10:
+            neuron = []
+        else:
+            neuron = NeuroVis(sub_df.ts, ii)
+        neuron_list.append(neuron)
+
+    pop = PopVis(neuron_list)
+    return(neuron_list,pop)
+
+def get_event_triggered_st(ts,events,idx,pre_win,post_win):
+    print('Calculating Time D')
+    D = ts-events[:,np.newaxis]
+    mask = np.logical_or(D<-pre_win,D>post_win)
+    D[mask] = np.nan
+    pop = []
+    print('Working on all neurons')
+    for ii in tqdm(np.unique(idx)):
+        trains = []
+        for jj in range(len(events)):
+            sts = D[jj,idx==ii]
+            sts = sts[np.isfinite(sts)]
+            trains.append(sts)
+
+        pop.append(trains)
+    return(pop)
 
 
+def create_spike_mat(spikes,dt = 0.001):
+    n_neurons = np.max(spikes.cell_id.unique())+1
+    max_t = np.max(spikes.ts)
+    t_vec = np.arange(0,max_t,dt)
+    X = np.zeros([n_neurons,len(t_vec)+1],dtype='bool')
+    for n in range(n_neurons):
+        sub_spikes = spikes[spikes.cell_id==n]
+        ts = sub_spikes.ts.values
+        idx = np.searchsorted(t_vec,ts)
+        X[n,idx] = 1
 
+    return(X)
 
 
