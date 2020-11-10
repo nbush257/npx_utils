@@ -7,7 +7,16 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from spykes.plot import NeuroVis
+import sys
+import sklearn
+sys.path.append('../../')
+sys.path.append('../')
+import utils.ephys.signal as esig
 
+def bwfilt(x,fs,low=300,high=10000):
+    b,a = scipy.signal.butter(2,[low/fs/2,high/fs/2],btype='bandpass')
+    y = scipy.signal.filtfilt(b,a,x)
+    return(y)
 
 def nasal_to_phase(x):
     '''
@@ -361,4 +370,114 @@ def proc_pleth(pleth,tvec,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
     pleth_data['postBI'] = np.hstack([pleth_on_t[1:]-pleth_off_t[:-1],[np.nan]])
 
     return(pleth_on_t,pleth_data)
+
+def events_to_rate(evt,max_time,dt,start_time=0):
+    '''
+
+    :param evt: array of times (in seconds) in which events occur
+    :param max_time: last time to map to
+    :param dt: time step to use between updates of rate
+    :return:
+            tvec - a vector of timestamps with the chosen dt
+            rate - the value of the rate over those timestamps
+    '''
+    tvec = np.arange(start_time,max_time,dt)
+    rate = np.zeros_like(tvec)
+    last_val = 0
+    for ii in range(1,len(evt)):
+        t0 = evt[ii-1]
+        tf = evt[ii]
+        rr = tf-t0
+        next_val = np.searchsorted(tvec,tf)
+        rate[last_val:next_val] = 1/rr
+        last_val = next_val
+
+    rate[last_val:]=1/rr
+    return(tvec,rate)
+
+
+
+
+
+def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=2.5):
+
+    # Window for time of QRS shapes
+    win = int(0.010 *sr)
+    max_t = len(dia)/sr
+    # Bandpass filter the recorded diaphragm
+    xs = esig.bwfilt(dia,sr,10,10000)
+    # Get QRS peak times
+    pulse = scipy.signal.find_peaks(xs,prominence=qrs_thresh*np.std(xs),distance=0.05*sr)[0]
+    # Create a copy of the smoothed diaphragm - may not be needed
+    y = xs.copy()
+    # Preallocate for all QRS shapes
+    QRS = np.zeros([2*win,len(pulse)])
+
+    # Get each QRS complex
+    for ii,pk in enumerate(pulse):
+        try:
+            QRS[:,ii] = xs[pk-win:pk+win]
+        except:
+            pass
+    # Replace each QRS complex with the average of ten nearby QRS
+    for ii,pk in enumerate(pulse):
+        if pk-win<0:
+            continue
+        if (pk+win)>len(xs):
+            continue
+        xs[pk-win:pk+win] -= np.nanmean(QRS[:,ii-5:ii+5],1)
+
+    pulse_times = pulse/sr
+
+    xs[np.isnan(xs)] = 0
+    xss = esig.bwfilt(xs,sr,1000,10000)
+    smooth_win = np.ones(int(0.025*sr))
+    integrated = scipy.signal.convolve(np.abs(xss),smooth_win,'same')/len(smooth_win)
+    scl = sklearn.preprocessing.StandardScaler(with_mean=0)
+    integrated_scl = scl.fit_transform(integrated[:,np.newaxis]).ravel()
+
+    pks = scipy.signal.find_peaks(integrated_scl,
+                                  prominence=dia_thresh,
+                                  distance=int(0.200*sr),
+                                  width=int(0.020*sr))[0]
+    lips = scipy.signal.peak_widths(integrated,pks,rel_height=0.9)[2]
+    rips = scipy.signal.peak_widths(integrated, pks, rel_height=0.75)[3]
+    lips = lips.astype('int')
+    rips = rips.astype('int')
+
+    amp = np.zeros(len(lips))
+    auc = np.zeros(len(lips))
+    for ii,(lip,rip) in enumerate(zip(lips,rips)):
+        temp = integrated[lip:rip]
+        amp[ii] = np.percentile(temp,95)
+        auc[ii] = np.trapz(temp)
+    dur = rips-lips
+
+    lips_t = lips/sr
+    rips_t = rips/sr
+
+    dia_data = {}
+    dia_data['on_samp'] = lips
+    dia_data['off_samp'] = rips
+    dia_data['on_sec'] = lips_t
+    dia_data['off_sec'] = rips_t
+    dia_data['amp'] = amp
+    dia_data['auc'] = amp
+    dia_data['duration_sec'] = dur/sr
+    dia_data['duration_samp'] = dur
+    dia_data['pk_samp'] = pks
+    dia_data['pk_time'] = pks/sr
+    dia_data['postBI'] = np.hstack([lips_t[1:]-rips_t[:-1],[np.nan]])
+
+    rate_t,dia_rate = events_to_rate(lips_t,max_t,0.1)
+    rate_t,pulse_rate = events_to_rate(pulse_times,max_t,0.1)
+    pulse_rate = scipy.signal.medfilt(pulse_rate,5)
+
+
+    return(dia_data,rate_t,dia_rate,pulse_rate)
+
+
+
+
+
 
