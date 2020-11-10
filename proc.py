@@ -371,6 +371,7 @@ def proc_pleth(pleth,tvec,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
 
     return(pleth_on_t,pleth_data)
 
+
 def events_to_rate(evt,max_time,dt,start_time=0):
     '''
 
@@ -396,9 +397,6 @@ def events_to_rate(evt,max_time,dt,start_time=0):
     return(tvec,rate)
 
 
-
-
-
 def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1):
     '''
     Processes the raw diaphragm by performing filtering, EKG removal, rectification
@@ -408,10 +406,8 @@ def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1):
     :param qrs_thresh: threshold (standardized) to detect the ekg signal (default=6)
     :param dia_thresh: threshold (standardized) to detect diaphragm recruitment
     :return:
-            dia_data - dict with various burst features
-            rate_t -  a time vector to match the respiratory rate and pulse to
-            dia_rate - the respiratory rate as determined by diaphragm onsets (in Hz)
-            pulse_rate - the heart rate (in Hz)
+            dia_df - DataFrame with various burst features as derived from the diaphragm
+            phys_df - DataFrame with physiology data - heart rate and diaphragm rate
     '''
 
     # Window for time of QRS shapes
@@ -446,7 +442,9 @@ def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1):
     xss = esig.bwfilt(xs,sr,1000,10000)
     smooth_win = int(0.05*sr)
 
+    print('Integrating, this can take a while')
     integrated = np.sqrt(scipy.signal.medfilt(xss**2,smooth_win+1))
+    print('Integrated!')
 
     scl = sklearn.preprocessing.StandardScaler(with_mean=0)
     integrated_scl = scl.fit_transform(integrated[:,np.newaxis]).ravel()
@@ -477,20 +475,27 @@ def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1):
     dia_data['on_sec'] = lips_t
     dia_data['off_sec'] = rips_t
     dia_data['amp'] = amp
-    dia_data['auc'] = amp
+    dia_data['auc'] = auc
     dia_data['duration_sec'] = dur/sr
     dia_data['duration_samp'] = dur
     dia_data['pk_samp'] = pks
     dia_data['pk_time'] = pks/sr
     dia_data['postBI'] = np.hstack([lips_t[1:]-rips_t[:-1],[np.nan]])
 
+    dia_df = pd.DataFrame(dia_data)
+
     rate_t,dia_rate = events_to_rate(lips_t,max_t,0.1)
     rate_t,pulse_rate = events_to_rate(pulse_times,max_t,0.1)
     pulse_rate = scipy.signal.medfilt(pulse_rate,5)
 
+    phys_df = pd.DataFrame()
+    phys_df['t'] = rate_t
+    phys_df['heart_rate'] = pulse_rate
+    phys_df['dia_rate'] = dia_rate
 
 
-    return(dia_data,rate_t,dia_rate,pulse_rate)
+
+    return(dia_df,phys_df)
 
 
 
