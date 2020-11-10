@@ -399,7 +399,20 @@ def events_to_rate(evt,max_time,dt,start_time=0):
 
 
 
-def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=2.5):
+def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1):
+    '''
+    Processes the raw diaphragm by performing filtering, EKG removal, rectification
+    integration (medfilt), burst detection, and burst quantification
+    :param dia: raw diaphragm recording
+    :param sr: sample rate
+    :param qrs_thresh: threshold (standardized) to detect the ekg signal (default=6)
+    :param dia_thresh: threshold (standardized) to detect diaphragm recruitment
+    :return:
+            dia_data - dict with various burst features
+            rate_t -  a time vector to match the respiratory rate and pulse to
+            dia_rate - the respiratory rate as determined by diaphragm onsets (in Hz)
+            pulse_rate - the heart rate (in Hz)
+    '''
 
     # Window for time of QRS shapes
     win = int(0.010 *sr)
@@ -431,17 +444,19 @@ def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=2.5):
 
     xs[np.isnan(xs)] = 0
     xss = esig.bwfilt(xs,sr,1000,10000)
-    smooth_win = np.ones(int(0.025*sr))
-    integrated = scipy.signal.convolve(np.abs(xss),smooth_win,'same')/len(smooth_win)
+    smooth_win = int(0.05*sr)
+
+    integrated = np.sqrt(scipy.signal.medfilt(xss**2,smooth_win+1))
+
     scl = sklearn.preprocessing.StandardScaler(with_mean=0)
     integrated_scl = scl.fit_transform(integrated[:,np.newaxis]).ravel()
 
     pks = scipy.signal.find_peaks(integrated_scl,
                                   prominence=dia_thresh,
                                   distance=int(0.200*sr),
-                                  width=int(0.020*sr))[0]
+                                  width=int(0.050*sr))[0]
     lips = scipy.signal.peak_widths(integrated,pks,rel_height=0.9)[2]
-    rips = scipy.signal.peak_widths(integrated, pks, rel_height=0.75)[3]
+    rips = scipy.signal.peak_widths(integrated,pks,rel_height=0.8)[3]
     lips = lips.astype('int')
     rips = rips.astype('int')
 
@@ -472,6 +487,7 @@ def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=2.5):
     rate_t,dia_rate = events_to_rate(lips_t,max_t,0.1)
     rate_t,pulse_rate = events_to_rate(pulse_times,max_t,0.1)
     pulse_rate = scipy.signal.medfilt(pulse_rate,5)
+
 
 
     return(dia_data,rate_t,dia_rate,pulse_rate)
