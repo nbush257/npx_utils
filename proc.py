@@ -1,10 +1,4 @@
 from scipy.signal import hilbert,savgol_filter,find_peaks
-try:
-    import tensortools as tt
-    has_tt=True
-except:
-    has_tt = False
-
 import spykes
 import scipy.signal
 import matplotlib.pyplot as plt
@@ -227,36 +221,6 @@ def get_opto_tagged(ts,pulse_on,thresh=0.25,lockout=2,max=9):
     return(is_tagged)
 
 
-def raster2tensor(raster,raster_bins,events,pre = .100,post = .200):
-    '''
-
-
-    :param raster:
-    :param raster_bins:
-    :param events:
-    :param pre:
-    :param post:
-    :return:
-    '''
-    dt = np.round(np.mean(np.diff(raster_bins)),5)
-    trial_length = int(np.round((pre+post)/dt))
-    keep_events = events>(raster_bins[0]-pre)
-    events = events[keep_events]
-    keep_events = events<(raster_bins[-1]-post)
-    events = events[keep_events]
-
-    raster_T = np.empty([trial_length,raster.shape[0],len(events)])
-
-    for ii,evt in enumerate(events):
-        t0 = evt-pre
-        t1 = evt+post
-        bin_lims = np.searchsorted(raster_bins,[t0,t1])
-        xx = raster[:,bin_lims[0]:bin_lims[0]+trial_length].T
-        raster_T[:,:,ii]= xx
-    bins = np.arange(-pre,post,dt)
-    return(raster_T,bins)
-
-
 def get_event_triggered_st(ts,events,idx,pre_win,post_win):
     D = ts-events[:,np.newaxis]
     mask = np.logical_or(D<-pre_win,D>post_win)
@@ -271,115 +235,6 @@ def get_event_triggered_st(ts,events,idx,pre_win,post_win):
 
         pop.append(trains)
     return(pop)
-
-
-if has_tt:
-    def get_best_TCA(TT,max_rank=15,plot_tgl=True):
-        ''' Fit ensembles of tensor decompositions.
-            Returns the best model with the fewest parameters
-            '''
-        methods = (
-            'ncp_hals',  # fits nonnegative tensor decomposition.
-        )
-        ranks = range(1,max_rank+1)
-        ensembles = {}
-        m = methods[0]
-        ensembles[m] = tt.Ensemble(fit_method=m, fit_options=dict(tol=1e-4))
-        ensembles[m].fit(TT, ranks=ranks, replicates=10)
-
-        if plot_tgl:
-            plot_opts1 = {
-                'line_kw': {
-                    'color': 'black',
-                    'label': 'ncp_hals',
-                },
-                'scatter_kw': {
-                    'color': 'black',
-                    'alpha':0.2,
-                },
-            }
-            plot_opts2 = {
-                'line_kw': {
-                    'color': 'red',
-                    'label': 'ncp_hals',
-                },
-                'scatter_kw': {
-                    'color': 'red',
-                    'alpha':0.2,
-                },
-            }
-            plt.close('all')
-            fig = plt.figure
-            ax = tt.plot_similarity(ensembles[m],**plot_opts1)
-            axx = ax.twinx()
-            tt.plot_objective(ensembles[m],ax=axx,**plot_opts2)
-        mm = []
-        for ii in range(1,max_rank+1):
-            mm.append(np.median(ensembles[m].objectives(ii)))
-        mm = 1-np.array(mm)
-        best = np.argmax(np.diff(np.diff(mm)))+1
-        optimal = ensembles[m].results[ranks[best]]
-        dum_obj = 1
-        for decomp in optimal:
-            if decomp.obj<dum_obj:
-                best_decomp = decomp
-                dum_obj = decomp.obj
-
-        if plot_tgl:
-            axx.vlines(ranks[best],axx.get_ylim()[0],axx.get_ylim()[1],lw=3,ls='--')
-        return(best_decomp,[ax,axx])
-
-
-def calc_is_bursting(spiketimes,thresh=3,max_small_ISI=0.02,max_long_ISI=5.,max_abs_ISI=2):
-    '''
-    :param spiketimes: vector of spike times for a single neuron
-    :param thresh: Seperation of means (in seconds) required to classify the isi histograms as bimodal (default=10ms)
-    :return: is_burst, clf: Boolean is a burster or not, clf the GMM that gave rise to that result
-    :rtype:
-    '''
-    if len(spiketimes)<100:
-        return(False)
-    isi = np.diff(spiketimes)
-    nspikes = len(spiketimes)
-    hts, bins = np.histogram(np.log(isi), bins=100)
-
-    mode_idx = scipy.signal.argrelmax(np.log(hts), order=10)[0]
-
-    mode_height = hts[mode_idx]
-    idx = np.argsort(mode_height)[::-1]
-    top_modes = np.exp(bins[mode_idx[idx]])[:2]
-    top_modes = np.sort(top_modes)
-
-    # kick out any neurons that are not firing for a while
-    max_ISI = np.percentile(np.exp(isi),99)
-    if max_ISI>max_abs_ISI:
-        return(False)
-
-
-    # ratio of long ISI mode to short ISI mode. If large, scell is burstier
-    if len(top_modes)<2:
-        return(False)
-
-    mean_diff = top_modes[1]/top_modes[0]
-
-    if top_modes[0]>max_small_ISI:
-        is_burst=False
-    elif top_modes[1]>max_long_ISI:
-        is_burst=False
-    elif mean_diff>thresh:
-        is_burst = True
-    else:
-        is_burst = False
-    return(is_burst)
-
-
-def find_all_bursters(ts,idx,**kwargs):
-
-    is_burster = np.zeros(np.max(idx)+1)
-    for cell in np.unique(idx):
-        is_burster[cell] = calc_is_bursting(ts[idx==cell],**kwargs)
-
-    return(is_burster)
 
 
 def calc_is_mod(ts,events,pre_win=-0.1,post_win=.150):
@@ -449,6 +304,7 @@ def pop_is_mod(spiketimes,cell_id,events,**kwargs):
     mod_depth[np.isnan(mod_depth)] = 0
 
     return(is_mod,mod_depth)
+
 
 def proc_pleth(pleth,tvec,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
     '''
