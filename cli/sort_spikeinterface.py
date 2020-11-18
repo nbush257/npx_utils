@@ -44,8 +44,9 @@ def main(fn,output_dir):
     params = ss.get_default_params('kilosort2')
     #params['minFR'] = 0.2
     #params['minfr_goodchannels'] = 0.2
-    # params['car'] = False
+    params['car'] = False
     # params['NT'] = 64*512 + params['ntbuff']
+    params['AUCsplit'] =0.95
     print('='*50)
     print('Running Kilosort2')
     print('='*50)
