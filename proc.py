@@ -18,6 +18,7 @@ def bwfilt(x,fs,low=300,high=10000):
     y = scipy.signal.filtfilt(b,a,x)
     return(y)
 
+
 def nasal_to_phase(x):
     '''
     Given an input array, use a Hilbert transform to return the phase of that signal
@@ -397,7 +398,7 @@ def events_to_rate(evt,max_time,dt,start_time=0):
     return(tvec,rate)
 
 
-def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1):
+def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1,method='triang',win=0.05):
     '''
     Processes the raw diaphragm by performing filtering, EKG removal, rectification
     integration (medfilt), burst detection, and burst quantification
@@ -408,11 +409,40 @@ def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1):
     :return:
             dia_df - DataFrame with various burst features as derived from the diaphragm
             phys_df - DataFrame with physiology data - heart rate and diaphragm rate
+            integrated - array of integrated diaphragm
     '''
-
-    # Window for time of QRS shapes
-    win = int(0.010 *sr)
     max_t = len(dia)/sr
+    integrated,pulse_times = integrate_dia(dia,sr,qrs_thresh=qrs_thresh,method=method,win=win)
+    dia_df = burst_stats_dia(integrated,sr,dia_thresh=dia_thresh)
+
+    rate_t,dia_rate = events_to_rate(dia_df['on_sec'],max_t,0.1)
+    rate_t,pulse_rate = events_to_rate(pulse_times,max_t,0.1)
+    pulse_rate = scipy.signal.medfilt(pulse_rate,5)
+
+    phys_df = pd.DataFrame()
+    phys_df['t'] = rate_t
+    phys_df['heart_rate'] = pulse_rate
+    phys_df['dia_rate'] = dia_rate
+    phys_df = phys_df.set_index('t')
+
+
+
+    return(dia_df,phys_df,integrated)
+
+
+def integrate_dia(dia,sr,qrs_thresh=6,method='triang',win=0.05):
+    '''
+    Remove EKG and integrate the diaphragm trace
+    :param dia: raw diaphragm recording
+    :param sr: sample rate
+    :param qrs_thresh: threshold (standardized) to detect the ekg signal (default=6)
+    :param method: method by which to integrate ['med'...] 'med' is very slow, but good. Takes any valid argument to scipy.signal.get_window
+    :return:
+            integrated - integrated diaphragm trace
+            pulse_times - heartbeat times
+    '''
+    # Window for time of QRS shapes
+    win_qrs = int(0.010 *sr)
     # Bandpass filter the recorded diaphragm
     xs = esig.bwfilt(dia,sr,10,10000)
     # Get QRS peak times
@@ -420,32 +450,47 @@ def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1):
     # Create a copy of the smoothed diaphragm - may not be needed
     y = xs.copy()
     # Preallocate for all QRS shapes
-    QRS = np.zeros([2*win,len(pulse)])
+    QRS = np.zeros([2*win_qrs,len(pulse)])
 
     # Get each QRS complex
     for ii,pk in enumerate(pulse):
         try:
-            QRS[:,ii] = xs[pk-win:pk+win]
+            QRS[:,ii] = xs[pk-win_qrs:pk+win_qrs]
         except:
             pass
     # Replace each QRS complex with the average of ten nearby QRS
     for ii,pk in enumerate(pulse):
-        if pk-win<0:
+        if pk-win_qrs<0:
             continue
-        if (pk+win)>len(xs):
+        if (pk+win_qrs)>len(xs):
             continue
-        xs[pk-win:pk+win] -= np.nanmean(QRS[:,ii-5:ii+5],1)
+        xs[pk-win_qrs:pk+win_qrs] -= np.nanmean(QRS[:,ii-5:ii+5],1)
 
     pulse_times = pulse/sr
 
     xs[np.isnan(xs)] = 0
     xss = esig.bwfilt(xs,sr,1000,10000)
-    smooth_win = int(0.05*sr)
 
-    print('Integrating, this can take a while')
-    integrated = np.sqrt(scipy.signal.medfilt(xss**2,smooth_win+1))
-    print('Integrated!')
+    if method == 'med':
+        smooth_win = int(win* sr)
+        print('Integrating, this can take a while')
+        integrated = np.sqrt(scipy.signal.medfilt(xss**2,smooth_win+1))
+        print('Integrated!')
+    else:
+        smooth_win = scipy.signal.get_window(method,int(win * sr))
+        integrated = np.sqrt(scipy.signal.convolve(xss**2,smooth_win,'same'))/len(smooth_win)
+    return(integrated,pulse_times)
 
+
+def burst_stats_dia(integrated,sr,dia_thresh=1):
+    '''
+    Calculate diaphragm burst features
+    :param integrated: integrated diaphragm trace
+    :param sr: sample rate
+    :param dia_thresh:
+    :return:
+            dia_df - dataframe of diaphragm burst features
+    '''
     scl = sklearn.preprocessing.StandardScaler(with_mean=0)
     integrated_scl = scl.fit_transform(integrated[:,np.newaxis]).ravel()
 
@@ -484,19 +529,36 @@ def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1):
 
     dia_df = pd.DataFrame(dia_data)
 
-    rate_t,dia_rate = events_to_rate(lips_t,max_t,0.1)
-    rate_t,pulse_rate = events_to_rate(pulse_times,max_t,0.1)
-    pulse_rate = scipy.signal.medfilt(pulse_rate,5)
-
-    phys_df = pd.DataFrame()
-    phys_df['t'] = rate_t
-    phys_df['heart_rate'] = pulse_rate
-    phys_df['dia_rate'] = dia_rate
+    return(dia_df)
 
 
+def events_in_epochs(evt,epoch_times,epoch_labels=None):
+    '''
+    Given a list of events, categorizes which epoch they are in from the list of epochs
+    :param evt:
+    :param epoch_times: include 0
+    :param epoch_labels:
+    :return:
+    '''
+    cat = np.zeros(len(evt))
+    # loop through
+    for ii in range(len(epoch_times)-1):
+        lb = epoch_times[ii]
+        ub = epoch_times[ii+1]
+        mask = np.logical_and(
+            evt>lb,evt<ub
+        )
+        cat[mask]=ii
 
-    return(dia_df,phys_df)
+    lb = epoch_times[-1]
+    ub = np.Inf
 
+    mask = np.logical_and(
+        evt > lb, evt < ub
+    )
+    cat[mask] = ii+1
+
+    return(cat)
 
 
 

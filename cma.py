@@ -177,6 +177,7 @@ def skw2alpha(skw):
 
     return(bA,tA)
 
+
 def alpha2thresh(cma_curve,bA,tA):
     '''
     utlity function used in calculation of burstiness
