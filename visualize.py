@@ -197,7 +197,20 @@ def plot_raster_summary(spikes,phys_df):
 
 
 def plot_raster_example(spikes,sr,pleth,dia_int,t0,win=10,events=None):
+    '''
+    Plots the spike raster for [t0,t0+win]. Include the pleth and diaphragm traces.
+    :param spikes: (DataFrame) spikes dataframe (columns are ts, cell_id)
+    :param sr: (float)sample rate of the auxiliarry channels (Hz)
+    :param pleth: (1D array) Pleth trace
+    :param dia_int: (1D array) integrated diaphragm trace
+    :param t0: (float) window start in seconds
+    :param win: (float) window length in seconds)
+    :param events:  (optional - list/array). Plots vertical lines at the times in events (seconds)
+    :return:
+    '''
 
+
+    # subsample the spikes dataframe to the window
     sub_spikes = spikes[spikes.ts>t0]
     sub_spikes = sub_spikes[sub_spikes.ts<(t0+win)]
 
@@ -212,28 +225,35 @@ def plot_raster_example(spikes,sr,pleth,dia_int,t0,win=10,events=None):
     pleth_sub = pleth[sub_samps]
     pleth_sub = pleth_sub/np.max(pleth_sub)*(0.1*ymax)
 
-
-
+    # Set up the figure
     f = plt.figure(figsize=(4,5))
+    # Plot the spike times as dots
     plt.plot(sub_spikes.ts,sub_spikes.depth,'k.',alpha=0.3,mew=0,ms=3)
-    # plt.vlines(sub_spikes.ts,sub_spikes.depth,sub_spikes.depth+20,'k',alpha=1,lw=0.5)
-    # plt.scatter(sub_spikes.ts,sub_spikes.depth,c=sub_spikes.depth,s=2,alpha=0.7,cmap='jet')
+
+    # Plot the aux data - does some scaling to include everything in the same plot
     plt.plot(sub_tvec,dia_sub-(0.1*ymax),lw=0.5,color='tab:green')
     plt.plot(sub_tvec,pleth_sub-(0.2*ymax),lw=0.5,color='tab:purple')
     plt.axis('off')
 
+    # Plot the scale bars
     ymin = np.min(pleth_sub)-(0.2*ymax)
     plt.hlines(ymin,t0,(t0+win/25))
     plt.text(t0,ymin-(0.01*ymax),f'{win/10}s',fontsize=8,verticalalignment='top')
     plt.vlines(t0-(win/25),0,500)
     plt.text(t0-(win/25),0,'500 $\\mu$m',rotation=90,horizontalalignment='right',verticalalignment='bottom',fontsize=8)
 
+    # Label the pleth/dia
+    plt.text(t0,(-.1*ymax),'$\int$Dia',fontsize=8,rotation=90,horizontalalignment='right')
+    plt.text(t0,(-.22*ymax),'Pleth',fontsize=8,rotation=90,horizontalalignment='right')
+
+    # Draw the "rostral" arrow
     plt.arrow(t0-(win/25),np.median(sub_spikes.depth),0,-500,width=0.1,head_length=250,color='k')
     plt.text(t0-(win/15),np.median(sub_spikes.depth),'Rostral',
              fontsize=8,
              horizontalalignment='right',verticalalignment='top',
              rotation=90)
 
+    # Plot the events as vertical lines
     if events is not None:
         if type(events) is pd.core.series.Series:
             events = events.values
