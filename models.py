@@ -88,3 +88,26 @@ def get_best_TCA(TT,max_rank=15,plot_tgl=True):
         axx.vlines(ranks[best],axx.get_ylim()[0],axx.get_ylim()[1],lw=3,ls='--')
     return(best_decomp,[ax,axx])
 
+
+def classify_breaths(dia_df, dia_int, pleth):
+    '''
+    Classify periods of apnea, sigh, gasp.
+    :return:
+    '''
+    pass
+
+
+def run_affine():
+    '''
+    Run the Alex williams affine warp code
+    :return:
+    '''
+    pass
+
+
+def NMF_classifier():
+    '''
+    Run a naive Non-negative decomposition
+    to classify insp/exp... type cells.
+    :return:
+    '''

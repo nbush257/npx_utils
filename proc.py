@@ -14,12 +14,12 @@ sys.path.append('../')
 import utils.ephys.signal as esig
 
 def bwfilt(x,fs,low=300,high=10000):
-    b,a = scipy.signal.butter(2,[low/fs/2,high/fs/2],btype='bandpass')
+    b,a = scipy.signal.butter(4,[low/fs/2,high/fs/2],btype='bandpass')
     y = scipy.signal.filtfilt(b,a,x)
     return(y)
 
 
-def nasal_to_phase(x):
+def calc_phase(x):
     '''
     Given an input array, use a Hilbert transform to return the phase of that signal
     over time.
@@ -69,32 +69,11 @@ def nasal_to_phase(x):
     return(phi)
 
 
-def get_insp_onset(nasal_trace,order=2,direction=1,thresh=3):
-    """
-    Return the times of inspiration onset
-
-    :param nasal_trace: nasal thermistor trace
-    :param order: Use first or second derivative (1,2)
-    :param direction: do we expect inspiration to be up or down (1,-1)in the trace?
-    :return: samples of inspiration onset
-    """
-
-    direction = np.sign(direction)
-    d_nasal = direction*savgol_filter(np.diff(nasal_trace),501,1)
-    diff2 = savgol_filter(np.diff(d_nasal),501,1)
-    if order==1:
-        insp_onset = find_peaks(d_nasal, prominence=np.std(d_nasal) * thresh)[0]
-    elif order==2:
-        insp_onset = find_peaks(diff2, prominence=np.std(diff2) * thresh)[0]
-    else:
-        raise NotImplemented('Only order 1 or 2 is implemented')
-    return(insp_onset)
-
-
 def shift_phi(phi,insp_onset):
     '''
     Shifts the phi such that 0 is inspiration onset
-    :param nasal:
+    :param phi: phase trace
+    :param insp_onset: samples to shift to phi=0
     :return new_phi: phase shifted phi
     '''
     m_phi = np.mean(phi[insp_onset])
@@ -225,13 +204,24 @@ def get_opto_tagged(ts,pulse_on,thresh=0.25,lockout=2,max=9):
         is_tagged = True
     else:
         is_tagged= False
-    # If the number of spikes is less than 85% of the number of stimulations, do not tag
-    if tot_spikes<.85*len(pulse_on):
+    # If the number of spikes is less than 75% of the number of stimulations, do not tag
+    if tot_spikes<.75*len(pulse_on):
         is_tagged=False
     return(is_tagged)
 
 
-def get_event_triggered_st(ts,events,idx,pre_win,post_win):
+def get_event_triggered_st(ts,idx,events,pre_win,post_win):
+    '''
+    Calculate the spike times that occurred before and after a given lis of events
+    and return a list of neo spike trains
+    :param ts: array of spike times
+    :param idx: cell_id associated with the unit number (must be of same length as ts)
+    :param events: array of event times
+    :param pre_win: window of time prior to event (in seconds)
+    :param post_win: window of event after event
+    :return pop: a list of neo spike trains
+    '''
+    assert(len(ts)==len(idx))
     D = ts-events[:,np.newaxis]
     mask = np.logical_or(D<-pre_win,D>post_win)
     D[mask] = np.nan
@@ -316,7 +306,35 @@ def pop_is_mod(spiketimes,cell_id,events,**kwargs):
     return(is_mod,mod_depth)
 
 
-def proc_pleth(pleth,tvec,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
+def events_to_rate(evt,max_time,dt,start_time=0):
+    '''
+    Calculate a time vector and a rate vector from discrete events.
+    Useful for mapping things like respiratory rate or heart rate
+
+    :param evt: array of times (in seconds) in which events occur
+    :param max_time: last time to map to
+    :param dt: time step to use between updates of rate
+    :return:
+            tvec - a vector of timestamps with the chosen dt
+            rate - the value of the rate over those timestamps
+    '''
+    tvec = np.arange(start_time,max_time,dt)
+    rate = np.zeros_like(tvec)
+    last_val = 0
+    for ii in range(1,len(evt)):
+        t0 = evt[ii-1]
+        tf = evt[ii]
+        rr = tf-t0
+        next_val = np.searchsorted(tvec,tf)
+        rate[last_val:next_val] = 1/rr
+        last_val = next_val
+
+    rate[last_val:]=1/rr
+    return(tvec,rate)
+
+
+
+def proc_pleth(pleth,sr,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
     '''
     Calculates the inspiration onsets and offsets.
     Only looks at positive deflections in the pleth
@@ -343,7 +361,7 @@ def proc_pleth(pleth,tvec,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
     temp_pleth[temp_pleth<0] = 0
 
     # Sampling rate is the difference of the first 2 time samples
-    sr = 1/(tvec[1]-tvec[0])
+
 
     # Get pleth peaks
     pk_pleth = scipy.signal.find_peaks(temp_pleth,width=width*sr,prominence=prominence,height=height,distance=distance*sr)[0]
@@ -354,8 +372,8 @@ def proc_pleth(pleth,tvec,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
     pleth_off = pleth_off.astype('int')
 
     # Map indices to values
-    pleth_on_t = tvec[pleth_on]
-    pleth_off_t = tvec[pleth_off]
+    pleth_on_t = pleth_on/sr
+    pleth_off_t = pleth_off/sr
     pleth_amp = pleth[pk_pleth]
 
     pleth_data = {}
@@ -367,45 +385,22 @@ def proc_pleth(pleth,tvec,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
     pleth_data['duration_sec'] = pleth_off_t-pleth_on_t
     pleth_data['duration_samp'] = pleth_off-pleth_on
     pleth_data['pk_samp'] = pk_pleth.astype('int')
-    pleth_data['pk_time'] = tvec[pk_pleth.astype('int')]
+    pleth_data['pk_time'] = pk_pleth.astype('int')/sr
     pleth_data['postBI'] = np.hstack([pleth_on_t[1:]-pleth_off_t[:-1],[np.nan]])
+    pleth_df = pd.DataFrame(pleth_data)
 
-    return(pleth_on_t,pleth_data)
-
-
-def events_to_rate(evt,max_time,dt,start_time=0):
-    '''
-
-    :param evt: array of times (in seconds) in which events occur
-    :param max_time: last time to map to
-    :param dt: time step to use between updates of rate
-    :return:
-            tvec - a vector of timestamps with the chosen dt
-            rate - the value of the rate over those timestamps
-    '''
-    tvec = np.arange(start_time,max_time,dt)
-    rate = np.zeros_like(tvec)
-    last_val = 0
-    for ii in range(1,len(evt)):
-        t0 = evt[ii-1]
-        tf = evt[ii]
-        rr = tf-t0
-        next_val = np.searchsorted(tvec,tf)
-        rate[last_val:next_val] = 1/rr
-        last_val = next_val
-
-    rate[last_val:]=1/rr
-    return(tvec,rate)
+    return(pleth_df)
 
 
 def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1,method='triang',win=0.05):
     '''
     Processes the raw diaphragm by performing filtering, EKG removal, rectification
-    integration (medfilt), burst detection, and burst quantification
+    integration, burst detection, and burst quantification
     :param dia: raw diaphragm recording
     :param sr: sample rate
     :param qrs_thresh: threshold (standardized) to detect the ekg signal (default=6)
     :param dia_thresh: threshold (standardized) to detect diaphragm recruitment
+    :param method: Either a scipy.signal.window string, or 'med' (warning- med is sloowww)
     :return:
             dia_df - DataFrame with various burst features as derived from the diaphragm
             phys_df - DataFrame with physiology data - heart rate and diaphragm rate
@@ -417,16 +412,13 @@ def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1,method='triang',win=0.05):
 
     rate_t,dia_rate = events_to_rate(dia_df['on_sec'],max_t,0.1)
     rate_t,pulse_rate = events_to_rate(pulse_times,max_t,0.1)
-    pulse_rate = scipy.signal.medfilt(pulse_rate,5)
+    pulse_rate = scipy.signal.medfilt(pulse_rate,11)
 
     phys_df = pd.DataFrame()
     phys_df['t'] = rate_t
     phys_df['heart_rate'] = pulse_rate
     phys_df['dia_rate'] = dia_rate
     phys_df = phys_df.set_index('t')
-
-
-
     return(dia_df,phys_df,integrated)
 
 
@@ -535,6 +527,7 @@ def burst_stats_dia(integrated,sr,dia_thresh=1):
 def events_in_epochs(evt,epoch_times,epoch_labels=None):
     '''
     Given a list of events, categorizes which epoch they are in from the list of epochs
+    Useful for labelling dataframes of onset events with things like "normoxia"
     :param evt:
     :param epoch_times: include 0
     :param epoch_labels:
@@ -559,6 +552,7 @@ def events_in_epochs(evt,epoch_times,epoch_labels=None):
     cat[mask] = ii+1
 
     return(cat)
+
 
 
 

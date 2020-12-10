@@ -55,6 +55,11 @@ def get_tvec(x_sync,sync_timestamps,sr):
     return(tvec)
 
 
+def get_sr(ni_bin_fn):
+    meta = readSGLX.readMeta(Path(ni_bin_fn))
+    sr = readSGLX.SampRate(meta)
+    return(sr)
+
 def get_ni_analog(ni_bin_fn, chan_id):
     '''
     Convinience function to load in a NI analog channel
@@ -168,6 +173,18 @@ def get_concatenated_spikes(ks2_dir):
     return(cat_spike_dict)
 
 
+def filter_by_spikerate(spikes,thresh = 100):
+    '''
+    remove units that have less than "thresh" spikes in the recording
+
+    :return: spikes2
+    '''
+    n_spikes = spikes.groupby('cell_id').count()['ts']
+    mask = n_spikes[n_spikes>thresh].index
+    spikes2 = spikes.loc[spikes['cell_id'].isin(mask)]
+    return(spikes2)
+
+
 def export_goodcell_csv(ks2_dir,ni_bin_fn,ecell_chan=2):
     '''
     Takes sortred KS2 data and exports only good cells to a XLSX
@@ -244,6 +261,7 @@ def create_spykes_pop(spikes,start_time=0,stop_time=np.inf):
 
     pop = PopVis(neuron_list)
     return(neuron_list,pop)
+
 
 def get_event_triggered_st(ts,events,idx,pre_win,post_win):
     print('Calculating Time D')

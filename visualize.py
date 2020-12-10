@@ -1,9 +1,12 @@
 """Visualization routines."""
+import seaborn as sns
 from spykes.plot import NeuroVis
 import numpy as np
 import matplotlib.pyplot as plt
-from . import proc
+# from . import proc
+import proc
 import matplotlib.cm as cm
+import pandas as pd
 
 def spykes_raster(raster):
     tt = np.arange(raster['window'][0],raster['window'][1],raster['binsize'])
@@ -92,6 +95,7 @@ def plot_cell_summary_disjointed(spikes,neuron_id,epochs,dia_df,phi,sr,epoch_lab
     :param sr:
     :return:
     '''
+    #TODO: Plot rasters
     ts = spikes[spikes.cell_id==neuron_id].ts.values
     depth = spikes[spikes.cell_id==neuron_id].depth.mean()
 
@@ -154,4 +158,95 @@ def plot_cell_summary_disjointed(spikes,neuron_id,epochs,dia_df,phi,sr,epoch_lab
 
     # psth_dia_on = neuron.get_psth(df=dia_df[dia_df.cat < dia_df.cat.max()], event='on_sec', conditions='cat',
     #                        colors=cmap)
+
+def plot_depth_map(vals,depths):
+    '''
+    Given a vector of values and depths plot a weighted histogram
+    and the individual points
+    :param vals:
+    :param depths:
+    :return:
+    '''
+    pass
+
+
+def plot_raster_summary(spikes,phys_df):
+    raster, cell_id, bins = proc.bin_trains(spikes.ts, spikes.cell_id, binsize=5, start_time=0, max_time=phys_df.index[-1])
+    f = plt.figure(figsize=(4,7))
+    gs = f.add_gridspec(7,1)
+    ax1 = f.add_subplot(gs[:-2,0])
+    ax1.pcolormesh(bins,cell_id,raster,cmap='Greys',vmin=0,vmax=np.percentile(raster,85))
+    ax2 = f.add_subplot(gs[-2:-1,0],sharex=ax1)
+    ax2.plot(phys_df.index,phys_df['heart_rate'],'.',alpha=0.6,ms=2,color= 'tab:green')
+
+    ax3 = f.add_subplot(gs[-1:,0],sharex=ax1)
+    ax3.plot(phys_df.index,phys_df['dia_rate'],'.',alpha=0.6,ms=2,color='tab:purple')
+
+
+    ax1.axis('off')
+    ax1.text(-phys_df.index[-1]/100,spikes.cell_id.nunique()/2,'Neurons',rotation=90,horizontalalignment='right')
+    sns.despine()
+    ax2.set_ylabel('Pulse (Hz)')
+    ax3.set_ylabel('Dia Rate (Hz)')
+    ax3.set_xlabel('Time (s)')
+    aa = ax1.get_xlim()[-1]
+    ax1.set_xlim([0,aa])
+    plt.tight_layout()
+
+    return(f,[ax1,ax2,ax3])
+
+
+def plot_raster_example(spikes,sr,pleth,dia_int,t0,win=10,events=None):
+
+    sub_spikes = spikes[spikes.ts>t0]
+    sub_spikes = sub_spikes[sub_spikes.ts<(t0+win)]
+
+    # Create a time vector for the analog data
+    sub_samps = np.arange(t0*sr,(t0+win)*sr).astype('int')
+    sub_tvec = np.arange(t0,t0+win,1/sr)
+
+    # Create scale factors
+    ymax = sub_spikes.depth.max()
+    dia_sub = dia_int[sub_samps]
+    dia_sub = dia_sub/np.max(dia_sub)*(0.1*ymax)
+    pleth_sub = pleth[sub_samps]
+    pleth_sub = pleth_sub/np.max(pleth_sub)*(0.1*ymax)
+
+
+
+    f = plt.figure(figsize=(4,5))
+    plt.plot(sub_spikes.ts,sub_spikes.depth,'k.',alpha=0.3,mew=0,ms=3)
+    # plt.vlines(sub_spikes.ts,sub_spikes.depth,sub_spikes.depth+20,'k',alpha=1,lw=0.5)
+    # plt.scatter(sub_spikes.ts,sub_spikes.depth,c=sub_spikes.depth,s=2,alpha=0.7,cmap='jet')
+    plt.plot(sub_tvec,dia_sub-(0.1*ymax),lw=0.5,color='tab:green')
+    plt.plot(sub_tvec,pleth_sub-(0.2*ymax),lw=0.5,color='tab:purple')
+    plt.axis('off')
+
+    ymin = np.min(pleth_sub)-(0.2*ymax)
+    plt.hlines(ymin,t0,(t0+win/25))
+    plt.text(t0,ymin-(0.01*ymax),f'{win/10}s',fontsize=8,verticalalignment='top')
+    plt.vlines(t0-(win/25),0,500)
+    plt.text(t0-(win/25),0,'500 $\\mu$m',rotation=90,horizontalalignment='right',verticalalignment='bottom',fontsize=8)
+
+    plt.arrow(t0-(win/25),np.median(sub_spikes.depth),0,-500,width=0.1,head_length=250,color='k')
+    plt.text(t0-(win/15),np.median(sub_spikes.depth),'Rostral',
+             fontsize=8,
+             horizontalalignment='right',verticalalignment='top',
+             rotation=90)
+
+    if events is not None:
+        if type(events) is pd.core.series.Series:
+            events = events.values
+        events = events[events<(t0+win)]
+        events = events[events>t0]
+        # [y1,y2] = plt.gca().get_ylim()
+
+        plt.vlines(events,ymin,ymax,ls='--',color='tab:red',alpha=0.4)
+
+    plt.tight_layout()
+
+    return(f)
+
+
+
 
