@@ -17,7 +17,7 @@
 
 cd $PROJ/npx_utils/cli
 echo ${p}
-cfg=/active/ramirez_j/ramirezlab/nbush/helpers/kilosort2/configFiles/cfg_neb_20201118.m
+cfg=/active/ramirez_j/ramirezlab/nbush/helpers/kilosort2/configFiles/cfg_neb_20201118_lowmem.m
 matlab -nodesktop -nosplash -r "run_ks2_NEB('$cfg','$p')"
 
 
