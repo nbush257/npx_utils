@@ -94,7 +94,23 @@ def classify_breaths(dia_df, dia_int, pleth):
     Classify periods of apnea, sigh, gasp.
     :return:
     '''
-    pass
+
+    # Get the plethysmography amplitude for each associated diaphragm burst
+    ons = np.sort(dia_df['on_samp'].values)
+    pamp = np.empty(len(ons))
+    for ii in range(len(ons)-1):
+        pslice = pleth[ons[ii]:ons[ii+1]]
+        pamp[ii] = np.max(pslice)
+
+    pslice = pleth[ons[-1]:]
+    pamp[-1] = np.max(pslice)
+    pamp[pamp<0] = 0
+    dia_df['pamp'] = pamp
+
+
+
+
+
 
 
 def run_affine():

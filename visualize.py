@@ -26,6 +26,8 @@ def plot_cell_summary_over_time(spikes,neuron_id,epochs,dia_df,phi,sr):
     :return:
     '''
     ts = spikes[spikes.cell_id==neuron_id].ts.values
+    if ts.shape[0]==0:
+        return(0)
     depth = spikes[spikes.cell_id==neuron_id].depth.mean()
 
     f = plt.figure(figsize=(10,3))
@@ -63,16 +65,16 @@ def plot_cell_summary_over_time(spikes,neuron_id,epochs,dia_df,phi,sr):
 
     # This line is needed to throw out all time after last epoch, which is gnerally longer thean all specified epochs
     dia_df = dia_df[dia_df['cat']<dia_df.cat.max()]
-    psth_dia_off = neuron.get_psth(df=dia_df, event='off_sec', conditions='cat',colors=cmap,window=[-250,500],binsize=20)
-    plt.title(f'Dia Off')
-    legend_vals = ['Dia_off']
+    psth_dia_off = neuron.get_psth(df=dia_df, event='on_sec', conditions='cat',colors=cmap,window=[-250,500],binsize=20)
+    plt.title(f'Dia On')
+    legend_vals = ['Dia On']
     legend_vals += [f'{x}s - {y}s' for x, y in zip(epochs_t0, epochs_tf)]
     leg = plt.legend([])
     ax1.get_legend().remove()
 
     ax2 = f.add_subplot(133,sharex=ax1,sharey=ax1)
-    psth_dia_off = neuron.get_psth(df=dia_df, event='on_sec', conditions='cat',colors=cmap,window=[-250,500],binsize=20)
-    plt.title(f'Dia On')
+    psth_dia_off = neuron.get_psth(df=dia_df, event='off_sec', conditions='cat',colors=cmap,window=[-250,500],binsize=20)
+    plt.title(f'Dia Off')
     plt.ylabel('')
 
     legend_vals = ['Trigger']
