@@ -20,6 +20,7 @@ import utils.burst as burst
 import utils.brian_utils.postproc as bup
 from spykes.plot import NeuroVis,PopVis
 from tqdm import tqdm
+from ks2_cleaning_pipeline import spike_times_npy_to_sec
 
 def get_tvec(x_sync,sync_timestamps,sr):
     '''
@@ -81,6 +82,9 @@ def create_spike_dict(ks2_dir,clus_id=None):
     :return: spiketimes dict
     '''
     st_fn = os.path.join(ks2_dir,'spike_times_sec.npy')
+    # Convert the spike times to second if not done
+    if not os.path.isfile(st_fn):
+        spike_times_npy_to_sec(os.path.join(ks2_dir,'spike_times.npy'))
     sc_fn = os.path.join(ks2_dir,'spike_clusters.npy')
     amp_fn = os.path.join(ks2_dir,'amplitudes.npy')
     # ks_label = pd.read_csv(os.path.join(ks2_dir,'cluster_KSLabel.tsv'),delimiter='\t')
@@ -106,6 +110,7 @@ def create_spike_dict(ks2_dir,clus_id=None):
         temp['n_spikes'] = len(temp['ts'])
         temp['mean_amp'] = np.mean(temp['amp'])
         temp['group'] = clu_info[clu_info['id']==clu].group.values[0]
+        temp['KSLabel'] = clu_info[clu_info['id']==clu].KSLabel.values[0]
         spike_dict[clu] = temp
 
     return(spike_dict)
@@ -119,10 +124,10 @@ def create_spike_df(ks2_dir):
     :return: spike_df - pandas dataframe of cluster data
     '''
     spike_df = pd.DataFrame(create_spike_dict(ks2_dir)).T
-    spike_df = spike_df[spike_df.group=='good']
+    spike_df = spike_df.query('group=="good" & KSLabel=="good"')
     spike_df.drop('amp',axis=1,inplace=True)
     spike_df.reset_index(inplace=True)
-    spike_df.rename({'index':'clu_id'},axis=1)
+    spike_df = spike_df.rename({'index':'clu_id'},axis=1)
 
     return(spike_df)
 
