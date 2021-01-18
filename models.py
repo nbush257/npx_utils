@@ -1,6 +1,7 @@
 """Routines for fitting models."""
 import numpy as np
 import tensortools as tt
+import matplotlib.pyplot as plt
 def raster2tensor(raster,raster_bins,events,pre = .100,post = .200):
     '''
     Given the binned spikerates over time and a series of events,
@@ -40,6 +41,10 @@ def get_best_TCA(TT,max_rank=15,plot_tgl=True):
     methods = (
         'ncp_hals',  # fits nonnegative tensor decomposition.
     )
+    ax=None
+    axx=None
+    if max_rank<3:
+        max_rank=3
     ranks = range(1,max_rank+1)
     ensembles = {}
     m = methods[0]

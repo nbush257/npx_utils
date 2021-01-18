@@ -149,6 +149,32 @@ def angular_response_hist(angular_var, sp, nbins=100,min_obs=5):
     return rate,theta_k,theta,L_dir
 
 
+def compute_KL(var,sp,nbins=25,min_obs=5):
+    '''
+    Given an angular variable that varies on -pi:pi,
+    returns the probability of observing a spike (or gives a spike rate) normalized by
+    the number of observations of that angular variable.
+
+    INPUTS: angular var -- either a numpy array or a neo analog signal. Should be 1-D
+            sp -- type: neo.core.SpikeTrain, numpy array. Sp can either be single spikes or a rate
+    OUTPUTS:    rate -- the stimulus evoked rate at each observed theta bin
+                theta_k -- the observed theta bins
+                theta -- the preferred direction as determined by vector mean
+                L_dir -- The preferred direction tuning strength (1-CircVar)
+    '''
+
+
+    # not nan is a list of finite sample indices, rather than a boolean mask. This is used in computing the posterior
+    not_nan = np.where(np.isfinite(var))[0]
+    prior, prior_edges = np.histogram(var[not_nan], bins=nbins)
+    prior[prior < min_obs] = 0
+    # allows the function to take a spike train or a continuous rate to get the posterior
+    posterior, theta_k = np.histogram(var[not_nan], weights=sp[not_nan], bins=nbins)
+
+    KL = scipy.stats.entropy(posterior,prior)
+    return(KL)
+
+
 def bin_trains(ts,idx,max_time=None,binsize=0.05,start_time=5):
     '''
     bin_trains(ts,idx,n_neurons,binsize=0.05,start_time=5):
@@ -331,7 +357,6 @@ def events_to_rate(evt,max_time,dt,start_time=0):
 
     rate[last_val:]=1/rr
     return(tvec,rate)
-
 
 
 def proc_pleth(pleth,sr,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
@@ -554,7 +579,13 @@ def events_in_epochs(evt,epoch_times,epoch_labels=None):
     return(cat)
 
 
+def get_CCG_corrected(X1,X2,tau):
+    '''
+    Compute the jitter corrected cross correlogram to estimate functional connectivity:
+    https://www.biorxiv.org/content/10.1101/2020.08.30.272948v1.full.pdf+html
 
-
-
-
+    :param X1: spiketrain 1 (time x trials) - binary in each ms
+    :param X2: spiketrain 2 (time x trials)
+    :param tau:
+    :return:
+    '''

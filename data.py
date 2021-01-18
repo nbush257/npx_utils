@@ -20,7 +20,63 @@ import utils.burst as burst
 import utils.brian_utils.postproc as bup
 from spykes.plot import NeuroVis,PopVis
 from tqdm import tqdm
-from ks2_cleaning_pipeline import spike_times_npy_to_sec
+
+
+def spike_times_npy_to_sec(sp_fullPath, sample_rate = 0, bNPY = True):
+    # convert spike_times.npy to text of times in sec
+    # return path to the new file. Can take sample_rate as a
+    # parameter, or set to 0 to read from param file
+
+    # get file name and create path to new file
+    # FROM ECEPHYS, not NEB
+    '''
+    sp_fullPath: path to kilosort spiketimes output (data are in samples)
+    sample_rate: default to 0 in order to read in from the param file
+    bNPY: boolean flag for using npy files. Default to True. Vestigial but kept in case we need the flexibility
+
+    '''
+
+    sp_path, sp_fileName = os.path.split(sp_fullPath)
+    baseName, bExt = os.path.splitext(sp_fileName)
+    if bNPY:
+        new_fileName = baseName + '_sec.npy'
+    else:
+        new_fileName = baseName + '_sec.txt'
+
+    new_fullPath = os.path.join(sp_path, new_fileName)
+
+    # load spike_times.npy; returns numpy array (Nspike,) as uint64
+    spike_times = np.load(sp_fullPath)
+
+    if sample_rate == 0:
+        # get sample rate from params.py file, assuming sp_path is a full set
+        # of phy output
+        with open(os.path.join(sp_path, 'params.py'), 'r') as f:
+            currLine = f.readline()
+            while currLine != '':  # The EOF char is an empty string
+                if 'sample_rate' in currLine:
+                    sample_rate = float(currLine.split('=')[1])
+                    print(f'sample_rate read from params.py: {sample_rate:.10f}')
+                currLine = f.readline()
+
+            if sample_rate == 0:
+                print('failed to read in sample rate\n')
+                sample_rate = 30000
+
+    spike_times_sec = spike_times/sample_rate   # spike_times_sec dtype = float
+
+    if bNPY:
+        # write out npy file
+        np.save(new_fullPath, spike_times_sec)
+    else:
+        # write out single column text file
+        nSpike = len(spike_times_sec)
+        with open(new_fullPath, 'w') as outfile:
+            for i in range(0, nSpike-1):
+                outfile.write(f'{spike_times_sec[i]:.6f}\n')
+            outfile.write(f'{spike_times_sec[nSpike-1]:.6f}')
+
+    return new_fullPath
 
 def get_tvec(x_sync,sync_timestamps,sr):
     '''

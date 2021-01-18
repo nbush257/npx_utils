@@ -25,20 +25,27 @@ def plot_cell_summary_over_time(spikes,neuron_id,epochs,dia_df,phi,sr):
     :param sr:
     :return:
     '''
+
+    # Sample data
     ts = spikes[spikes.cell_id==neuron_id].ts.values
     if ts.shape[0]==0:
         return(0)
     depth = spikes[spikes.cell_id==neuron_id].depth.mean()
-
-    f = plt.figure(figsize=(10,3))
-    ax0 = f.add_subplot(131,projection='polar')
-
     epochs_t0 = epochs[:-1]
     epochs_tf = epochs[1:]
     cat = proc.events_in_epochs(dia_df['on_sec'], epochs)
     dia_df['cat'] = cat
+    neuron = NeuroVis(ts)
 
+    # Start plotting
+    f = plt.figure(figsize=(4,6))
+    gs = f.add_gridspec(nrows=3,ncols=2)
+    ax0 = f.add_subplot(gs[0,0],projection='polar')
+
+    # Plot the polar rsponses
     cmap = cm.copper(np.linspace(0,1,len(epochs)))
+    KL = []
+
     for ii, (t0, tf) in enumerate(zip(epochs_t0, epochs_tf)):
         sub_spikes = ts[ts > t0]
         sub_spikes = sub_spikes[sub_spikes < tf]
@@ -52,35 +59,52 @@ def plot_cell_summary_over_time(spikes,neuron_id,epochs,dia_df,phi,sr):
         sp_idx = np.round(spt * sr).astype('int')
         btrain[sp_idx] = 1
         rr, theta_k, theta, L_dir = proc.angular_response_hist(phi_slice, btrain, 25)
+        kl = proc.compute_KL(phi_slice,btrain,25)
+        KL.append(kl)
         rr = np.hstack([rr,rr[0]])
         plt.polar(theta_k, rr * sr, color=cmap[ii])
-
     plt.xticks([0,np.pi/2,np.pi,3*np.pi/2])
-    ax0.set_xticklabels(['Insp','mid-I','I-E','E'])
 
-    plt.suptitle(f'Neuron {neuron_id}; loc:{depth:0.0f}um; mod_depth:{L_dir:0.2f}')
-    neuron = NeuroVis(ts)
-    ax1 = f.add_subplot(132)
+    plt.suptitle(f'Neuron {neuron_id}; loc:{depth:0.0f}um; mod_depth:{np.mean(KL):0.2f}')
 
-
+    # Get diaphragm triggered
+    ax1 = f.add_subplot(gs[1,0])
     # This line is needed to throw out all time after last epoch, which is gnerally longer thean all specified epochs
     dia_df = dia_df[dia_df['cat']<dia_df.cat.max()]
     psth_dia_off = neuron.get_psth(df=dia_df, event='on_sec', conditions='cat',colors=cmap,window=[-250,500],binsize=20)
     plt.title(f'Dia On')
     legend_vals = ['Dia On']
-    legend_vals += [f'{x}s - {y}s' for x, y in zip(epochs_t0, epochs_tf)]
+    legend_vals += [f'{x/60}-{y/60}m' for x, y in zip(epochs_t0, epochs_tf)]
     leg = plt.legend([])
     ax1.get_legend().remove()
 
-    ax2 = f.add_subplot(133,sharex=ax1,sharey=ax1)
+    ax2 = f.add_subplot(gs[2,0],sharex=ax1,sharey=ax1)
     psth_dia_off = neuron.get_psth(df=dia_df, event='off_sec', conditions='cat',colors=cmap,window=[-250,500],binsize=20)
     plt.title(f'Dia Off')
     plt.ylabel('')
 
     legend_vals = ['Trigger']
     legend_vals += [f'{x}s - {y}s' for x, y in zip(epochs_t0, epochs_tf)]
-    plt.legend(legend_vals,bbox_to_anchor=(1.6,0.5),loc='center right')
+    plt.legend(legend_vals,bbox_to_anchor=(1.2,0.5),loc='center right',fontsize=6)
+
+    ax3 = f.add_subplot(gs[:,1])
+    raster = neuron.get_raster(df=dia_df,event='on_sec',window=[-500,500],binsize=5,plot=False)
+    trial,tspike = np.where(raster['data'][0])
+    bins = np.arange(raster['window'][0],raster['window'][1],raster['binsize'])
+    ax3.plot(bins[tspike],dia_df['on_sec'][trial]/60,'k.',ms=2,alpha=0.1)
+    ax3.set_ylabel('time [min]')
+    ax3.set_xlabel('time [ms]')
+    ax3.axvline(0,color='r',ls=':')
+    ax3.set_ylim(epochs[0]/60,epochs[-1]/60)
+    for ii, (t0, tf) in enumerate(zip(epochs_t0, epochs_tf)):
+        ax3.axhspan(t0/60,tf/60,color=cmap[ii],alpha=0.1)
+        ax3.axhline(t0/60,color='k',ls=':')
+
     plt.tight_layout()
+
+
+
+    return(f)
 
     # psth_dia_on = neuron.get_psth(df=dia_df[dia_df.cat < dia_df.cat.max()], event='on_sec', conditions='cat',
     #                        colors=cmap)
@@ -267,6 +291,36 @@ def plot_raster_example(spikes,sr,pleth,dia_int,t0,win=10,events=None):
 
     plt.tight_layout()
 
+    return(f)
+
+
+def plot_tensortools_factors(mdl,raster_bins,dd):
+    '''
+    Convinience function for plotting the tensor tools
+    decompositions a little prettier than Alex Williams defaults
+    Includes depth estimation of cells
+    :param mdl: tensor tools decomp
+    :param raster_bins: time axis from get_tensor
+    :param dd: a 1D array of recording locations for each row of the cell- axis
+    :return:  figure
+    '''
+    factors = mdl.factors.factors
+    n_rank = factors[0].shape[1]
+    n_neurons = factors[1].shape[0]
+    f,ax = plt.subplots(nrows=n_rank,ncols=3,sharex='col',figsize=(5,7))
+    cmap = np.tile(cm.Dark2(range(7)),[2,1])
+    for ii in range(n_rank):
+        ax[ii,0].plot(raster_bins,factors[0][:,ii],lw=1,color=cmap[ii])
+        ax[ii,1].bar(dd,factors[1][:,ii],color=cmap[ii],width=100)
+        ax[ii,2].plot(factors[2][:,ii],'.',ms=3,color=cmap[ii],alpha=0.4)
+    sns.despine()
+    ax[-1,0].set_xlabel('time [ms]')
+    ax[-1,1].set_xlabel('depth [$\\mu m$]')
+    ax[-1,2].set_xlabel('Breath no.')
+    ax[0,0].set_title('Firing Patterns')
+    ax[0,1].set_title('Cell Assemblies')
+    ax[0,2].set_title('Network States')
+    plt.tight_layout()
     return(f)
 
 
