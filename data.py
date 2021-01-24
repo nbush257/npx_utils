@@ -20,7 +20,7 @@ import utils.burst as burst
 import utils.brian_utils.postproc as bup
 from spykes.plot import NeuroVis,PopVis
 from tqdm import tqdm
-from ks2_cleaning_pipeline import spike_times_npy_to_sec
+# from ks2_cleaning_pipeline import spike_times_npy_to_sec
 
 def get_tvec(x_sync,sync_timestamps,sr):
     '''
