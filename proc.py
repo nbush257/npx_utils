@@ -1,10 +1,4 @@
 from scipy.signal import hilbert,savgol_filter,find_peaks
-try:
-    import tensortools as tt
-    has_tt=True
-except:
-    has_tt = False
-
 import spykes
 import scipy.signal
 import matplotlib.pyplot as plt
@@ -13,9 +7,19 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from spykes.plot import NeuroVis
+import sys
+import sklearn
+sys.path.append('../../')
+sys.path.append('../')
+import utils.ephys.signal as esig
+
+def bwfilt(x,fs,low=300,high=10000):
+    b,a = scipy.signal.butter(4,[low/fs/2,high/fs/2],btype='bandpass')
+    y = scipy.signal.filtfilt(b,a,x)
+    return(y)
 
 
-def nasal_to_phase(x):
+def calc_phase(x):
     '''
     Given an input array, use a Hilbert transform to return the phase of that signal
     over time.
@@ -65,32 +69,11 @@ def nasal_to_phase(x):
     return(phi)
 
 
-def get_insp_onset(nasal_trace,order=2,direction=1,thresh=3):
-    """
-    Return the times of inspiration onset
-
-    :param nasal_trace: nasal thermistor trace
-    :param order: Use first or second derivative (1,2)
-    :param direction: do we expect inspiration to be up or down (1,-1)in the trace?
-    :return: samples of inspiration onset
-    """
-
-    direction = np.sign(direction)
-    d_nasal = direction*savgol_filter(np.diff(nasal_trace),501,1)
-    diff2 = savgol_filter(np.diff(d_nasal),501,1)
-    if order==1:
-        insp_onset = find_peaks(d_nasal, prominence=np.std(d_nasal) * thresh)[0]
-    elif order==2:
-        insp_onset = find_peaks(diff2, prominence=np.std(diff2) * thresh)[0]
-    else:
-        raise NotImplemented('Only order 1 or 2 is implemented')
-    return(insp_onset)
-
-
 def shift_phi(phi,insp_onset):
     '''
     Shifts the phi such that 0 is inspiration onset
-    :param nasal:
+    :param phi: phase trace
+    :param insp_onset: samples to shift to phi=0
     :return new_phi: phase shifted phi
     '''
     m_phi = np.mean(phi[insp_onset])
@@ -166,6 +149,32 @@ def angular_response_hist(angular_var, sp, nbins=100,min_obs=5):
     return rate,theta_k,theta,L_dir
 
 
+def compute_KL(var,sp,nbins=25,min_obs=5):
+    '''
+    Given an angular variable that varies on -pi:pi,
+    returns the probability of observing a spike (or gives a spike rate) normalized by
+    the number of observations of that angular variable.
+
+    INPUTS: angular var -- either a numpy array or a neo analog signal. Should be 1-D
+            sp -- type: neo.core.SpikeTrain, numpy array. Sp can either be single spikes or a rate
+    OUTPUTS:    rate -- the stimulus evoked rate at each observed theta bin
+                theta_k -- the observed theta bins
+                theta -- the preferred direction as determined by vector mean
+                L_dir -- The preferred direction tuning strength (1-CircVar)
+    '''
+
+
+    # not nan is a list of finite sample indices, rather than a boolean mask. This is used in computing the posterior
+    not_nan = np.where(np.isfinite(var))[0]
+    prior, prior_edges = np.histogram(var[not_nan], bins=nbins)
+    prior[prior < min_obs] = 0
+    # allows the function to take a spike train or a continuous rate to get the posterior
+    posterior, theta_k = np.histogram(var[not_nan], weights=sp[not_nan], bins=nbins)
+
+    KL = scipy.stats.entropy(posterior,prior)
+    return(KL)
+
+
 def bin_trains(ts,idx,max_time=None,binsize=0.05,start_time=5):
     '''
     bin_trains(ts,idx,n_neurons,binsize=0.05,start_time=5):
@@ -221,43 +230,24 @@ def get_opto_tagged(ts,pulse_on,thresh=0.25,lockout=2,max=9):
         is_tagged = True
     else:
         is_tagged= False
-    # If the number of spikes is less than 85% of the number of stimulations, do not tag
-    if tot_spikes<.85*len(pulse_on):
+    # If the number of spikes is less than 75% of the number of stimulations, do not tag
+    if tot_spikes<.75*len(pulse_on):
         is_tagged=False
     return(is_tagged)
 
 
-def raster2tensor(raster,raster_bins,events,pre = .100,post = .200):
+def get_event_triggered_st(ts,idx,events,pre_win,post_win):
     '''
-
-
-    :param raster:
-    :param raster_bins:
-    :param events:
-    :param pre:
-    :param post:
-    :return:
+    Calculate the spike times that occurred before and after a given lis of events
+    and return a list of neo spike trains
+    :param ts: array of spike times
+    :param idx: cell_id associated with the unit number (must be of same length as ts)
+    :param events: array of event times
+    :param pre_win: window of time prior to event (in seconds)
+    :param post_win: window of event after event
+    :return pop: a list of neo spike trains
     '''
-    dt = np.round(np.mean(np.diff(raster_bins)),5)
-    trial_length = int(np.round((pre+post)/dt))
-    keep_events = events>(raster_bins[0]-pre)
-    events = events[keep_events]
-    keep_events = events<(raster_bins[-1]-post)
-    events = events[keep_events]
-
-    raster_T = np.empty([trial_length,raster.shape[0],len(events)])
-
-    for ii,evt in enumerate(events):
-        t0 = evt-pre
-        t1 = evt+post
-        bin_lims = np.searchsorted(raster_bins,[t0,t1])
-        xx = raster[:,bin_lims[0]:bin_lims[0]+trial_length].T
-        raster_T[:,:,ii]= xx
-    bins = np.arange(-pre,post,dt)
-    return(raster_T,bins)
-
-
-def get_event_triggered_st(ts,events,idx,pre_win,post_win):
+    assert(len(ts)==len(idx))
     D = ts-events[:,np.newaxis]
     mask = np.logical_or(D<-pre_win,D>post_win)
     D[mask] = np.nan
@@ -271,115 +261,6 @@ def get_event_triggered_st(ts,events,idx,pre_win,post_win):
 
         pop.append(trains)
     return(pop)
-
-
-if has_tt:
-    def get_best_TCA(TT,max_rank=15,plot_tgl=True):
-        ''' Fit ensembles of tensor decompositions.
-            Returns the best model with the fewest parameters
-            '''
-        methods = (
-            'ncp_hals',  # fits nonnegative tensor decomposition.
-        )
-        ranks = range(1,max_rank+1)
-        ensembles = {}
-        m = methods[0]
-        ensembles[m] = tt.Ensemble(fit_method=m, fit_options=dict(tol=1e-4))
-        ensembles[m].fit(TT, ranks=ranks, replicates=10)
-
-        if plot_tgl:
-            plot_opts1 = {
-                'line_kw': {
-                    'color': 'black',
-                    'label': 'ncp_hals',
-                },
-                'scatter_kw': {
-                    'color': 'black',
-                    'alpha':0.2,
-                },
-            }
-            plot_opts2 = {
-                'line_kw': {
-                    'color': 'red',
-                    'label': 'ncp_hals',
-                },
-                'scatter_kw': {
-                    'color': 'red',
-                    'alpha':0.2,
-                },
-            }
-            plt.close('all')
-            fig = plt.figure
-            ax = tt.plot_similarity(ensembles[m],**plot_opts1)
-            axx = ax.twinx()
-            tt.plot_objective(ensembles[m],ax=axx,**plot_opts2)
-        mm = []
-        for ii in range(1,max_rank+1):
-            mm.append(np.median(ensembles[m].objectives(ii)))
-        mm = 1-np.array(mm)
-        best = np.argmax(np.diff(np.diff(mm)))+1
-        optimal = ensembles[m].results[ranks[best]]
-        dum_obj = 1
-        for decomp in optimal:
-            if decomp.obj<dum_obj:
-                best_decomp = decomp
-                dum_obj = decomp.obj
-
-        if plot_tgl:
-            axx.vlines(ranks[best],axx.get_ylim()[0],axx.get_ylim()[1],lw=3,ls='--')
-        return(best_decomp,[ax,axx])
-
-
-def calc_is_bursting(spiketimes,thresh=3,max_small_ISI=0.02,max_long_ISI=5.,max_abs_ISI=2):
-    '''
-    :param spiketimes: vector of spike times for a single neuron
-    :param thresh: Seperation of means (in seconds) required to classify the isi histograms as bimodal (default=10ms)
-    :return: is_burst, clf: Boolean is a burster or not, clf the GMM that gave rise to that result
-    :rtype:
-    '''
-    if len(spiketimes)<100:
-        return(False)
-    isi = np.diff(spiketimes)
-    nspikes = len(spiketimes)
-    hts, bins = np.histogram(np.log(isi), bins=100)
-
-    mode_idx = scipy.signal.argrelmax(np.log(hts), order=10)[0]
-
-    mode_height = hts[mode_idx]
-    idx = np.argsort(mode_height)[::-1]
-    top_modes = np.exp(bins[mode_idx[idx]])[:2]
-    top_modes = np.sort(top_modes)
-
-    # kick out any neurons that are not firing for a while
-    max_ISI = np.percentile(np.exp(isi),99)
-    if max_ISI>max_abs_ISI:
-        return(False)
-
-
-    # ratio of long ISI mode to short ISI mode. If large, scell is burstier
-    if len(top_modes)<2:
-        return(False)
-
-    mean_diff = top_modes[1]/top_modes[0]
-
-    if top_modes[0]>max_small_ISI:
-        is_burst=False
-    elif top_modes[1]>max_long_ISI:
-        is_burst=False
-    elif mean_diff>thresh:
-        is_burst = True
-    else:
-        is_burst = False
-    return(is_burst)
-
-
-def find_all_bursters(ts,idx,**kwargs):
-
-    is_burster = np.zeros(np.max(idx)+1)
-    for cell in np.unique(idx):
-        is_burster[cell] = calc_is_bursting(ts[idx==cell],**kwargs)
-
-    return(is_burster)
 
 
 def calc_is_mod(ts,events,pre_win=-0.1,post_win=.150):
@@ -450,7 +331,35 @@ def pop_is_mod(spiketimes,cell_id,events,**kwargs):
 
     return(is_mod,mod_depth)
 
-def proc_pleth(pleth,tvec,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
+
+def events_to_rate(evt,max_time,dt,start_time=0):
+    '''
+    Calculate a time vector and a rate vector from discrete events.
+    Useful for mapping things like respiratory rate or heart rate
+
+    :param evt: array of times (in seconds) in which events occur
+    :param max_time: last time to map to
+    :param dt: time step to use between updates of rate
+    :return:
+            tvec - a vector of timestamps with the chosen dt
+            rate - the value of the rate over those timestamps
+    '''
+    tvec = np.arange(start_time,max_time,dt)
+    rate = np.zeros_like(tvec)
+    last_val = 0
+    for ii in range(1,len(evt)):
+        t0 = evt[ii-1]
+        tf = evt[ii]
+        rr = tf-t0
+        next_val = np.searchsorted(tvec,tf)
+        rate[last_val:next_val] = 1/rr
+        last_val = next_val
+
+    rate[last_val:]=1/rr
+    return(tvec,rate)
+
+
+def proc_pleth(pleth,sr,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
     '''
     Calculates the inspiration onsets and offsets.
     Only looks at positive deflections in the pleth
@@ -477,7 +386,7 @@ def proc_pleth(pleth,tvec,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
     temp_pleth[temp_pleth<0] = 0
 
     # Sampling rate is the difference of the first 2 time samples
-    sr = 1/(tvec[1]-tvec[0])
+
 
     # Get pleth peaks
     pk_pleth = scipy.signal.find_peaks(temp_pleth,width=width*sr,prominence=prominence,height=height,distance=distance*sr)[0]
@@ -488,8 +397,8 @@ def proc_pleth(pleth,tvec,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
     pleth_off = pleth_off.astype('int')
 
     # Map indices to values
-    pleth_on_t = tvec[pleth_on]
-    pleth_off_t = tvec[pleth_off]
+    pleth_on_t = pleth_on/sr
+    pleth_off_t = pleth_off/sr
     pleth_amp = pleth[pk_pleth]
 
     pleth_data = {}
@@ -501,10 +410,173 @@ def proc_pleth(pleth,tvec,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
     pleth_data['duration_sec'] = pleth_off_t-pleth_on_t
     pleth_data['duration_samp'] = pleth_off-pleth_on
     pleth_data['pk_samp'] = pk_pleth.astype('int')
-    pleth_data['pk_time'] = tvec[pk_pleth.astype('int')]
+    pleth_data['pk_time'] = pk_pleth.astype('int')/sr
     pleth_data['postBI'] = np.hstack([pleth_on_t[1:]-pleth_off_t[:-1],[np.nan]])
+    pleth_df = pd.DataFrame(pleth_data)
 
-    return(pleth_on_t,pleth_data)
+    return(pleth_df)
+
+
+def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1,method='triang',win=0.05):
+    '''
+    Processes the raw diaphragm by performing filtering, EKG removal, rectification
+    integration, burst detection, and burst quantification
+    :param dia: raw diaphragm recording
+    :param sr: sample rate
+    :param qrs_thresh: threshold (standardized) to detect the ekg signal (default=6)
+    :param dia_thresh: threshold (standardized) to detect diaphragm recruitment
+    :param method: Either a scipy.signal.window string, or 'med' (warning- med is sloowww)
+    :return:
+            dia_df - DataFrame with various burst features as derived from the diaphragm
+            phys_df - DataFrame with physiology data - heart rate and diaphragm rate
+            integrated - array of integrated diaphragm
+    '''
+    max_t = len(dia)/sr
+    integrated,pulse_times = integrate_dia(dia,sr,qrs_thresh=qrs_thresh,method=method,win=win)
+    dia_df = burst_stats_dia(integrated,sr,dia_thresh=dia_thresh)
+
+    rate_t,dia_rate = events_to_rate(dia_df['on_sec'],max_t,0.1)
+    rate_t,pulse_rate = events_to_rate(pulse_times,max_t,0.1)
+    pulse_rate = scipy.signal.medfilt(pulse_rate,11)
+
+    phys_df = pd.DataFrame()
+    phys_df['t'] = rate_t
+    phys_df['heart_rate'] = pulse_rate
+    phys_df['dia_rate'] = dia_rate
+    phys_df = phys_df.set_index('t')
+    return(dia_df,phys_df,integrated)
+
+
+def integrate_dia(dia,sr,qrs_thresh=6,method='triang',win=0.05):
+    '''
+    Remove EKG and integrate the diaphragm trace
+    :param dia: raw diaphragm recording
+    :param sr: sample rate
+    :param qrs_thresh: threshold (standardized) to detect the ekg signal (default=6)
+    :param method: method by which to integrate ['med'...] 'med' is very slow, but good. Takes any valid argument to scipy.signal.get_window
+    :return:
+            integrated - integrated diaphragm trace
+            pulse_times - heartbeat times
+    '''
+    # Window for time of QRS shapes
+    win_qrs = int(0.010 *sr)
+    # Bandpass filter the recorded diaphragm
+    xs = esig.bwfilt(dia,sr,10,10000)
+    # Get QRS peak times
+    pulse = scipy.signal.find_peaks(xs,prominence=qrs_thresh*np.std(xs),distance=0.05*sr)[0]
+    # Create a copy of the smoothed diaphragm - may not be needed
+    y = xs.copy()
+    # Preallocate for all QRS shapes
+    QRS = np.zeros([2*win_qrs,len(pulse)])
+
+    # Get each QRS complex
+    for ii,pk in enumerate(pulse):
+        try:
+            QRS[:,ii] = xs[pk-win_qrs:pk+win_qrs]
+        except:
+            pass
+    # Replace each QRS complex with the average of ten nearby QRS
+    for ii,pk in enumerate(pulse):
+        if pk-win_qrs<0:
+            continue
+        if (pk+win_qrs)>len(xs):
+            continue
+        xs[pk-win_qrs:pk+win_qrs] -= np.nanmean(QRS[:,ii-5:ii+5],1)
+
+    pulse_times = pulse/sr
+
+    xs[np.isnan(xs)] = 0
+    xss = esig.bwfilt(xs,sr,1000,10000)
+
+    if method == 'med':
+        smooth_win = int(win* sr)
+        print('Integrating, this can take a while')
+        integrated = np.sqrt(scipy.signal.medfilt(xss**2,smooth_win+1))
+        print('Integrated!')
+    else:
+        smooth_win = scipy.signal.get_window(method,int(win * sr))
+        integrated = np.sqrt(scipy.signal.convolve(xss**2,smooth_win,'same'))/len(smooth_win)
+    return(integrated,pulse_times)
+
+
+def burst_stats_dia(integrated,sr,dia_thresh=1):
+    '''
+    Calculate diaphragm burst features
+    :param integrated: integrated diaphragm trace
+    :param sr: sample rate
+    :param dia_thresh:
+    :return:
+            dia_df - dataframe of diaphragm burst features
+    '''
+    scl = sklearn.preprocessing.StandardScaler(with_mean=0)
+    integrated_scl = scl.fit_transform(integrated[:,np.newaxis]).ravel()
+
+    pks = scipy.signal.find_peaks(integrated_scl,
+                                  prominence=dia_thresh,
+                                  distance=int(0.200*sr),
+                                  width=int(0.050*sr))[0]
+    lips = scipy.signal.peak_widths(integrated,pks,rel_height=0.9)[2]
+    rips = scipy.signal.peak_widths(integrated,pks,rel_height=0.8)[3]
+    lips = lips.astype('int')
+    rips = rips.astype('int')
+
+    amp = np.zeros(len(lips))
+    auc = np.zeros(len(lips))
+    for ii,(lip,rip) in enumerate(zip(lips,rips)):
+        temp = integrated[lip:rip]
+        amp[ii] = np.percentile(temp,95)
+        auc[ii] = np.trapz(temp)
+    dur = rips-lips
+
+    lips_t = lips/sr
+    rips_t = rips/sr
+
+    dia_data = {}
+    dia_data['on_samp'] = lips
+    dia_data['off_samp'] = rips
+    dia_data['on_sec'] = lips_t
+    dia_data['off_sec'] = rips_t
+    dia_data['amp'] = amp
+    dia_data['auc'] = auc
+    dia_data['duration_sec'] = dur/sr
+    dia_data['duration_samp'] = dur
+    dia_data['pk_samp'] = pks
+    dia_data['pk_time'] = pks/sr
+    dia_data['postBI'] = np.hstack([lips_t[1:]-rips_t[:-1],[np.nan]])
+
+    dia_df = pd.DataFrame(dia_data)
+
+    return(dia_df)
+
+
+def events_in_epochs(evt,epoch_times,epoch_labels=None):
+    '''
+    Given a list of events, categorizes which epoch they are in from the list of epochs
+    Useful for labelling dataframes of onset events with things like "normoxia"
+    :param evt:
+    :param epoch_times: include 0
+    :param epoch_labels:
+    :return:
+    '''
+    cat = np.zeros(len(evt))
+    # loop through
+    for ii in range(len(epoch_times)-1):
+        lb = epoch_times[ii]
+        ub = epoch_times[ii+1]
+        mask = np.logical_and(
+            evt>lb,evt<ub
+        )
+        cat[mask]=ii
+
+    lb = epoch_times[-1]
+    ub = np.Inf
+
+    mask = np.logical_and(
+        evt > lb, evt < ub
+    )
+    cat[mask] = ii+1
+
+    return(cat)
 
 
 def jitter(data,l):
@@ -558,15 +630,18 @@ def jitter(data,l):
     output = output[:length, :, :]
     return output
 
+
 def xcorrfft(a,b,NFFT):
     CCG = np.fft.fftshift(np.fft.ifft(np.multiply(np.fft.fft(a,NFFT), np.conj(np.fft.fft(b,NFFT)))))
     return CCG
+
 
 def nextpow2(n):
     """get the next power of 2 that's greater than n"""
     m_f = np.log2(n)
     m_i = np.ceil(m_f)
     return 2**m_i
+
 
 def get_ccgjitter(spikes, FR, jitterwindow=25):
     # spikes: neuron*ori*trial*time
