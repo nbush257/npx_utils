@@ -78,6 +78,7 @@ def spike_times_npy_to_sec(sp_fullPath, sample_rate = 0, bNPY = True):
 
     return new_fullPath
 
+
 def get_tvec(x_sync,sync_timestamps,sr):
     '''
     Get a time vector for NI that uses the sync signal
@@ -117,6 +118,7 @@ def get_sr(ni_bin_fn):
     sr = readSGLX.SampRate(meta)
     return(sr)
 
+
 def get_ni_analog(ni_bin_fn, chan_id):
     '''
     Convinience function to load in a NI analog channel
@@ -130,67 +132,6 @@ def get_ni_analog(ni_bin_fn, chan_id):
     analog_dat = ni_dat[chan_id]*bitvolts
 
     return(analog_dat)
-
-
-def create_spike_dict(ks2_dir,clus_id=None):
-    '''
-    load in the spike times from an npy file and seperate into a dict
-    where each cluster is a field. Optionally keep only certain clusters
-
-
-    :param ks2_dir: directory of the kilosort output
-    :param clus_id: List of clusters to keep (default keeps all)
-    :return: spiketimes dict
-    '''
-    st_fn = os.path.join(ks2_dir,'spike_times_sec.npy')
-    # Convert the spike times to second if not done
-    if not os.path.isfile(st_fn):
-        spike_times_npy_to_sec(os.path.join(ks2_dir,'spike_times.npy'))
-    sc_fn = os.path.join(ks2_dir,'spike_clusters.npy')
-    amp_fn = os.path.join(ks2_dir,'amplitudes.npy')
-    # ks_label = pd.read_csv(os.path.join(ks2_dir,'cluster_KSLabel.tsv'),delimiter='\t')
-    # group = pd.read_csv(os.path.join(ks2_dir,'cluster_group.tsv'),delimiter='\t')
-
-    st = np.load(st_fn)
-    sc = np.load(sc_fn)
-    amp = np.load(amp_fn)
-    chan_locs = np.load(os.path.join(ks2_dir,'channel_positions.npy'))
-    clu_info = pd.read_csv(os.path.join(ks2_dir,'cluster_info.tsv'),delimiter='\t')
-
-    if clus_id is None:
-        clus_id = clu_info.id.unique()
-    spike_dict = {}
-    for clu in clus_id:
-        temp = {}
-        temp['ts'] = st[sc==clu].ravel()
-        temp['amp'] = amp[sc==clu].ravel()
-
-        temp['pk_channel'] = clu_info[clu_info['id']==clu].ch.values[0]
-        temp['depth'] = clu_info[clu_info['id']==clu].depth.values[0]
-        # temp['depth'] = chan_locs[temp['pk_channel']][1]
-        temp['n_spikes'] = len(temp['ts'])
-        temp['mean_amp'] = np.mean(temp['amp'])
-        temp['group'] = clu_info[clu_info['id']==clu].group.values[0]
-        temp['KSLabel'] = clu_info[clu_info['id']==clu].KSLabel.values[0]
-        spike_dict[clu] = temp
-
-    return(spike_dict)
-
-
-def create_spike_df(ks2_dir):
-    '''
-    Loads in the spike time data to create a dataframe
-    Filters out only to the "good" cells
-    :param ks2_dir:
-    :return: spike_df - pandas dataframe of cluster data
-    '''
-    spike_df = pd.DataFrame(create_spike_dict(ks2_dir)).T
-    spike_df = spike_df.query('group=="good" & KSLabel=="good"')
-    spike_df.drop('amp',axis=1,inplace=True)
-    spike_df.reset_index(inplace=True)
-    spike_df = spike_df.rename({'index':'clu_id'},axis=1)
-
-    return(spike_df)
 
 
 def get_concatenated_spikes(ks2_dir,use_label='default'):
@@ -242,6 +183,7 @@ def get_concatenated_spikes(ks2_dir,use_label='default'):
 
     return(spikes,metrics)
 
+
 def filter_by_metric(metrics,spikes,expression):
     '''
     Finds all the clusters that pass a particular QC metrics filter expression and keeps only the spikes from
@@ -256,6 +198,7 @@ def filter_by_metric(metrics,spikes,expression):
     clu_list = metrics.query(expression)['cluster_id']
     spikes = spikes[spikes['cluster_id'].isin(clu_list)]
     return(spikes)
+
 
 def filter_default_metrics(metrics,spikes):
     '''
@@ -276,7 +219,6 @@ def filter_default_metrics(metrics,spikes):
     return(spikes)
 
 
-
 def filter_by_spikerate(spikes,thresh = 100):
     '''
     remove units that have less than "thresh" spikes in the recording
@@ -289,47 +231,6 @@ def filter_by_spikerate(spikes,thresh = 100):
     return(spikes2)
 
 
-def export_goodcell_csv(ks2_dir,ni_bin_fn,ecell_chan=2):
-    '''
-    Takes sortred KS2 data and exports only good cells to a XLSX
-    file for analyses.
-    Automatically grabs the extracellular data and finds burst onsets
-
-    :param ks2_dir: Directory of sorted data
-    :param ni_bin_fn: Filename for auziliary data
-    :param ecell_chan: Channel the extracellular (burst) data is on
-    :return: None - saves a summary excel file
-    '''
-    output_name = os.path.join(ks2_dir,'good_spiketimes.xlsx')
-
-    # Format spike data
-    sd = create_spike_dict(ks2_dir)
-    df = pd.DataFrame(sd).T
-    goods = df['group']=='good'
-    df_good = df[goods]
-    ts = pd.DataFrame(df_good['ts'].tolist()).T
-
-    sum_dat = df_good.drop(['ts','amp','group','pk_channel'],axis=1)
-    sum_dat.reset_index().rename(columns={'index':'original_clu_id'})
-
-    # Format extracellular
-    ecell = get_ni_analog(ni_bin_fn,ecell_chan)
-    meta = readSGLX.readMeta(Path(ni_bin_fn))
-    sr = readSGLX.SampRate(meta)
-    # x_sync = glob.glob(os.path.join(ks2_dir,'../*XA_0_0*.txt'))
-    # sync_timestamps = glob.glob(os.path.join(ks2_dir,'../*SY*.txt'))
-    # tvec = get_tvec(x_sync,sync_timestamps,sr)
-    pk_df = burst.get_burst_stats(ecell,sr,rel_height=0.85,thresh=1.5)
-
-
-    ###
-    writer = pd.ExcelWriter(output_name,engine='xlsxwriter')
-    ts.to_excel(writer,sheet_name='Spike Times (s)',index=False)
-    sum_dat.to_excel(writer,sheet_name='Summary Data')
-    pk_df.to_excel(writer,sheet_name='Burst Statistics')
-    writer.save()
-
-
 def create_neo_trains(ks2_dir):
    cat_spikes = get_concatenated_spikes(ks2_dir)
    train_list = []
@@ -340,6 +241,7 @@ def create_neo_trains(ks2_dir):
        train_list.append(dum)
 
    return(train_list)
+
 
 def create_spykes_pop(spikes,start_time=0,stop_time=np.inf):
     '''
@@ -383,19 +285,4 @@ def get_event_triggered_st(ts,events,idx,pre_win,post_win):
 
         pop.append(trains)
     return(pop)
-
-
-def create_spike_mat(spikes,dt = 0.001):
-    n_neurons = np.max(spikes.cell_id.unique())+1
-    max_t = np.max(spikes.ts)
-    t_vec = np.arange(0,max_t,dt)
-    X = np.zeros([n_neurons,len(t_vec)+1],dtype='bool')
-    for n in range(n_neurons):
-        sub_spikes = spikes[spikes.cell_id==n]
-        ts = sub_spikes.ts.values
-        idx = np.searchsorted(t_vec,ts)
-        X[n,idx] = 1
-
-    return(X)
-
 
