@@ -515,7 +515,7 @@ def burst_stats_dia(integrated,sr,dia_thresh=1):
                                   prominence=dia_thresh,
                                   distance=int(0.200*sr),
                                   width=int(0.050*sr))[0]
-    lips = scipy.signal.peak_widths(integrated,pks,rel_height=0.9)[2]
+    lips = scipy.signal.peak_widths(integrated,pks,rel_height=0.8)[2]
     rips = scipy.signal.peak_widths(integrated,pks,rel_height=0.8)[3]
     lips = lips.astype('int')
     rips = rips.astype('int')

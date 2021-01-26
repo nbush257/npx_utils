@@ -13,6 +13,7 @@ This script does the following:
 7) Saves a .csv with the diaphragm features
 '''
 import os
+import re
 import sys
 sys.path.append('../')
 sys.path.append('../../')
@@ -21,10 +22,13 @@ import readSGLX
 import numpy as np
 import scipy.signal as sig
 import scipy.io.matlab as sio
+import ephys.signal as esig
+import glob
 import pandas as pd
 import data
 import proc
 from ephys.signal import remove_EKG
+from statsmodels.nonparametric.smoothers_lowess import lowess
 from pathlib import Path
 import click
 
@@ -79,12 +83,24 @@ def load_dia_emg(mmap,meta,chan_id):
     return(dat,sr)
 
 
-def filt_int_ds_dia(x,sr,ds_factor=10):
+def filt_int_ds_dia(x,sr,ds_factor=10,win=.01):
     assert(type(ds_factor) is int )
-    dia_df,phys_df,dia_int = proc.proc_dia(x,sr,win=0.25)
 
-    dia_sub = dia_int[::ds_factor]
+    dia_filt = esig.remove_EKG(x,sr,thresh=2)
+    dia_filt[np.isnan(dia_filt)] = np.nanmedian(dia_filt)
+    sos = sig.butter(4,[300/sr/2,5000/sr/2],btype='bandpass',output='sos')
+    dia_filt2 = sig.sosfilt(sos,dia_filt)
+
+
+
+    smooth_win = sig.get_window('triang', int(win * sr))
+    integrated = np.sqrt(sig.convolve(dia_filt2 ** 2, smooth_win, 'same')) / len(smooth_win)
+
+    dia_smooth = sig.savgol_filter(integrated,window_length=int(0.05*sr)+1,polyorder=1)
+    dia_sub = dia_smooth[::ds_factor]
     sr_sub = sr/ds_factor
+    dia_df = proc.burst_stats_dia(dia_sub,sr_sub)
+    dia_sub = dia_sub/np.std(dia_sub)
 
     return(dia_df,dia_sub,sr_sub)
 
@@ -94,14 +110,9 @@ def make_save_fn(fn,save_path,save_name='_aux_downsamp'):
     load_path,no_path = os.path.split(fn)
     prefix = no_path.replace('.nidq.bin','')
     save_fn = os.path.join(save_path,prefix+save_name+'.mat')
-    return(save_fn)
+    return(save_fn,prefix)
 
 
-@click.command()
-@click.argument('fn')
-@click.option('-p','--pleth_chan','pleth_chan',default=0)
-@click.option('-d','--dia_chan','dia_chan',default=1)
-@click.option('-s','--save_path','save_path',default=None)
 def main(fn,pleth_chan,dia_chan,save_path):
 
     if save_path is None:
@@ -110,9 +121,9 @@ def main(fn,pleth_chan,dia_chan,save_path):
 
     mmap,meta = load_mmap(fn)
     pleth,sr_pleth = load_ds_pleth(mmap,meta,pleth_chan)
+    pleth = pleth/np.std(pleth)
     raw_dia,sr_dia = load_dia_emg(mmap,meta,dia_chan)
     dia_df,dia_sub,sr_dia_sub = filt_int_ds_dia(raw_dia,sr_dia)
-
 
 
     #Make sure the subsampled dia and pleth have identical SR
@@ -122,17 +133,45 @@ def main(fn,pleth_chan,dia_chan,save_path):
     data_dict = {
         'pleth':pleth,
         'dia':dia_sub,
-        'sr':sr_pleth
+        'sr':sr_pleth,
+        't':np.arange(0,len(pleth)/sr_pleth,1/sr_pleth)
     }
-    save_fn = make_save_fn(fn,save_path)
-    sio.savemat(save_fn,data_dict)
+    save_fn,prefix = make_save_fn(fn,save_path)
+    sio.savemat(save_fn,data_dict,oned_as='column')
 
     # Save the extracted diaphragm to a csv
     # But strip the data referenced to the 10K sampling
     dia_df.drop(['on_samp','off_samp','duration_samp','pk_samp'],axis=1,inplace=True)
-    dia_df.to_csv(os.path.join(save_path,'dia_stat.csv'))
+    dia_df.to_csv(os.path.join(save_path,f'{prefix}_dia_stat.csv'))
 
-    dia_df['on_sec'].to_csv(os.path.join(save_path,'dia_onsets.csv'),index=False)
+    dia_df['on_sec'].to_csv(os.path.join(save_path,f'{prefix}_dia_onsets.csv'),index=False)
+
+
+@click.command()
+@click.argument('fn')
+@click.option('-p','--pleth_chan','pleth_chan',default=0)
+@click.option('-d','--dia_chan','dia_chan',default=1)
+@click.option('-s','--save_path','save_path',default=None)
+def batch(fn,pleth_chan,dia_chan,save_path):
+    if os.path.isdir(fn):
+        print('Running as batch\n')
+        for root,dirs,files in os.walk(fn):
+            r = re.compile('.*nid.*bin')
+            flist = list(filter(r.match, files))
+            if len(flist)>0:
+                print(flist)
+                for ff in flist:
+                    fname = os.path.join(root,ff)
+                    print(fname)
+                    try:
+                        main(fname,pleth_chan,dia_chan,save_path)
+                    except:
+                        print('='*50)
+                        print(f'Failure on file {fname}')
+                        print('='*50)
+    else:
+        main(fn, pleth_chan, dia_chan, save_path)
+
 
 if __name__=='__main__':
-    main()
+    batch()
