@@ -244,7 +244,8 @@ def get_concatenated_spikes(ks2_dir,use_label='default'):
 
 def filter_by_metric(metrics,spikes,expression):
     '''
-    Allen metrics : presence ratio >.95, isi_viol<1, amplitude_cutoff < 0.1
+    Finds all the clusters that pass a particular QC metrics filter expression and keeps only the spikes from
+    those clusters
     :param metrics: the metrics csv
     :param spikes: the spikes dataframe with columns [ts,cluster_id,depth]
     :param expression: logical expression to filter the spikes by
@@ -256,6 +257,23 @@ def filter_by_metric(metrics,spikes,expression):
     spikes = spikes[spikes['cluster_id'].isin(clu_list)]
     return(spikes)
 
+def filter_default_metrics(metrics,spikes):
+    '''
+    Runs filter_by_metric for a few standard metrics.
+    Allen metrics : presence ratio >.95, isi_viol<1, amplitude_cutoff < 0.1
+    NEB metrics: isi_viol < 2, amplitude_cutoff < 0.2
+    I am not using presence ration because I expect some gasp only neurons.
+    Amplitude cutoff should still work although I am not sure if with KS2.5 it still makes sense
+    isi_violations should be relaxed a little given the bursty nature of these neurons
+    :param metrics:
+    :param spikes:
+    :return: filtered_spikes
+    '''
+    spikes = filter_by_spikerate(spikes,100)
+    spikes = filter_by_metric(metrics,spikes,'isi_viol<2 ')
+    spikes = filter_by_metric(metrics,spikes,'amplitude_cutoff<0.2 ')
+
+    return(spikes)
 
 
 
