@@ -685,6 +685,7 @@ def get_ccgjitter(spikes, FR, jitterwindow=25):
     rawccg = np.array(rawccg)
     return ccgjitter,rawccg
 
+
 def get_ccgjitter_NEB(ts,idx,events,max_time=1000,event_window=1,jitterwindow=25):
     '''
     Wrapper to Xiaouan Jia's jitter CCG code. Since she has this strange 4D
@@ -699,16 +700,16 @@ def get_ccgjitter_NEB(ts,idx,events,max_time=1000,event_window=1,jitterwindow=25
 
     events = events[events>5]
     bt,cell_id,bins = bin_trains(ts,idx,max_time,binsize=0.001,start_time=5)
-    T,T_bins = models.raster2tensor(bt,bins,events,pre=0,post=event_window)
+    T,T_bins = models.raster2tensor(bt,bins,events,pre=event_window/2,post=event_window/2)
 
-    T = np.rollaxis(T,2,1).T[:,np.newaxis,:,:]
+    T = np.rollaxis(T,2,1).T[:,np.newaxis,:,:].astype('bool')
     T = np.tile(T,[1,2,1,1])
 
     FR = np.mean(bt,axis=1)*1000
 
     ccg_corrected,ccg_raw = get_ccgjitter(T,FR)
     ccg_corrected = ccg_corrected[:,:,0]
-    ccg_raw = ccg_raw[:,:,0]
+    ccg_raw = ccg_raw[:,0,:]
 
     return(ccg_corrected,ccg_raw)
 
