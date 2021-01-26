@@ -193,45 +193,49 @@ def create_spike_df(ks2_dir):
     return(spike_df)
 
 
-def get_concatenated_spikes(ks2_dir):
+def get_concatenated_spikes(ks2_dir,use_label='default'):
     '''
     Built on top of create_spike_dict and create_spike_df
     Returns a minimal set of concatenated spike data. Probably the most useful
     way to import spike data
     :param ks2_dir:
-    :type ks2_dir:
-    :return:
-    :rtype:
+    :param use_label: define whether to use the phy label(default_, ks_label, or the intersection
     '''
 
-    spike_df = create_spike_df(ks2_dir)
+    # spike_df = create_spike_df(ks2_dir)
+    ts = np.load(f'{ks2_dir}/spike_times_sec.npy')
+    idx = np.load(f'{ks2_dir}/spike_clusters.npy')
+    metrics = pd.read_csv(f'{ks2_dir}/metrics.csv',index_col=0)
+    depths = np.load(f'{ks2_dir}/channel_positions.npy')[:,1]
+    dd = pd.DataFrame()
+    dd['peak_channel'] = np.arange(len(depths))
+    dd['depth'] = depths
+    metrics = metrics.merge(dd,how='left',on='peak_channel')
 
+    spikes = pd.DataFrame()
+    spikes['ts'] = ts
+    spikes['cell_id'] = idx
+    spikes = pd.merge(left=spikes, right=metrics[['cluster_id', 'depth']], how='left', left_on='cell_id',
+                      right_on='cluster_id')
 
-    sp = []
-    sc = []
-    depth = []
-    for ii,data in spike_df.iterrows():
-        sp_temp = data['ts']
-        sc_temp = np.repeat(ii,len(sp_temp))
-        depth_temp = np.repeat(data['depth'],len(sp_temp))
+    if use_label == 'default':
+        grp = pd.read_csv(f'{ks2_dir}/cluster_group.tsv', delimiter='\t')
+        spikes = pd.merge(left=spikes, right=grp[['cluster_id', 'group']], how='left', on='cluster_id')
+        spikes = spikes[spikes.group == 'good']
+    elif use_label == 'ks':
+        #TODO write filter by KS_Label
+    elif use_label == 'intersect':
+    # TODO write filter by KS_Label and cluster_group.tsv
+    else:
+        raise NotImplementedError('Use a valid label filter[default,ks,intesect]')
 
-        sp.append(sp_temp)
-        sc.append(sc_temp)
-        depth.append(depth_temp)
-    sp = np.hstack(sp)
-    sc = np.hstack(sc)
-    depth = np.hstack(depth)
+    spikes.drop('cluster_id',axis=1,inplace=True)
+    return(spikes,metrics)
 
-    idx = np.argsort(sp)
-    sp = sp[idx]
-    sc = sc[idx].astype('int')
-    depth = depth[idx]
+def filter_by_metric(metrics,spikes,var,expression):
+    #TODO: Make a function that filters the spike dataframe by a particular metric logical expression
+    pass
 
-    cat_spike_dict = pd.DataFrame()
-    cat_spike_dict['ts'] = sp
-    cat_spike_dict['cell_id'] = sc
-    cat_spike_dict['depth'] = depth
-    return(cat_spike_dict)
 
 
 def filter_by_spikerate(spikes,thresh = 100):
