@@ -184,7 +184,7 @@ def get_concatenated_spikes(ks2_dir,use_label='default'):
     return(spikes,metrics)
 
 
-def filter_by_metric(metrics,spikes,expression):
+def filter_by_metric(spikes,metrics,expression):
     '''
     Finds all the clusters that pass a particular QC metrics filter expression and keeps only the spikes from
     those clusters
@@ -200,7 +200,19 @@ def filter_by_metric(metrics,spikes,expression):
     return(spikes)
 
 
-def filter_default_metrics(metrics,spikes):
+def filter_by_spikerate(spikes,thresh = 100):
+    '''
+    remove units that have less than "thresh" spikes in the recording
+
+    :return: spikes2
+    '''
+    n_spikes = spikes.groupby('cell_id').count()['ts']
+    mask = n_spikes[n_spikes>thresh].index
+    spikes2 = spikes.loc[spikes['cell_id'].isin(mask)]
+    return(spikes2)
+
+
+def filter_default_metrics(spikes,metrics):
     '''
     Runs filter_by_metric for a few standard metrics.
     Allen metrics : presence ratio >.95, isi_viol<1, amplitude_cutoff < 0.1
@@ -218,18 +230,15 @@ def filter_default_metrics(metrics,spikes):
 
     return(spikes)
 
-
-def filter_by_spikerate(spikes,thresh = 100):
+def load_filtered_spikes(ks2_dir):
     '''
-    remove units that have less than "thresh" spikes in the recording
-
-    :return: spikes2
+    Convinience function to load the standard qc controlled spikes
+    :param ks2_dir:
+    :return:
     '''
-    n_spikes = spikes.groupby('cell_id').count()['ts']
-    mask = n_spikes[n_spikes>thresh].index
-    spikes2 = spikes.loc[spikes['cell_id'].isin(mask)]
-    return(spikes2)
-
+    spikes,metrics = get_concatenated_spikes(ks2_dir)
+    spikes = filter_default_metrics(spikes,metrics)
+    return(spikes,metrics)
 
 def create_neo_trains(ks2_dir):
    cat_spikes = get_concatenated_spikes(ks2_dir)
