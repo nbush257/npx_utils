@@ -11,7 +11,9 @@ import sys
 import sklearn
 sys.path.append('../../')
 sys.path.append('../')
+sys.path.append('.')
 import utils.ephys.signal as esig
+from . import models
 
 def bwfilt(x,fs,low=300,high=10000):
     b,a = scipy.signal.butter(4,[low/fs/2,high/fs/2],btype='bandpass')
@@ -657,6 +659,7 @@ def get_ccgjitter(spikes, FR, jitterwindow=25):
     target = np.array([int(i) for i in NFFT/2+np.arange((-n_t+2),n_t)])
 
     ccgjitter = []
+    rawccg = []
     pair=0
     for i in np.arange(n_unit-1): # V1 cell
         for m in np.arange(i+1,n_unit):  # V2 cell
@@ -676,6 +679,40 @@ def get_ccgjitter(spikes, FR, jitterwindow=25):
                 tempjitter = np.squeeze(np.nanmean(tempjitter[:,:,target],axis=1))
                 ccgjitter.append((tempccg - tempjitter).T/np.multiply(np.tile(np.sqrt(FR[i]*FR[m]), (len(target), 1)),
                     np.tile(theta.T.reshape(len(theta),1),(1,len(FR1)))))
+                rawccg.append(tempccg)
 
     ccgjitter = np.array(ccgjitter)
-    return ccgjitter
+    rawccg = np.array(rawccg)
+    return ccgjitter,rawccg
+
+def get_ccgjitter_NEB(ts,idx,events,max_time=1000,event_window=1,jitterwindow=25):
+    '''
+    Wrapper to Xiaouan Jia's jitter CCG code. Since she has this strange 4D
+    data shape, we have to play with and reshape the data by adding a doubled "orientation" dimension
+    :param ts:
+    :param idx:
+    :param events:
+    :param event_window:
+    :param jitterwindow:
+    :return:
+    '''
+
+    events = events[events>5]
+    bt,cell_id,bins = bin_trains(ts,idx,max_time,binsize=0.001,start_time=5)
+    T,T_bins = models.raster2tensor(bt,bins,events,pre=0,post=event_window)
+
+    T = np.rollaxis(T,2,1).T[:,np.newaxis,:,:]
+    T = np.tile(T,[1,2,1,1])
+
+    FR = np.mean(bt,axis=1)*1000
+
+    ccg_corrected,ccg_raw = get_ccgjitter(T,FR)
+    ccg_corrected = ccg_corrected[:,:,0]
+    ccg_raw = ccg_raw[:,:,0]
+
+    return(ccg_corrected,ccg_raw)
+
+
+
+
+
