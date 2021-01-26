@@ -225,8 +225,8 @@ def filter_default_metrics(spikes,metrics):
     :return: filtered_spikes
     '''
     spikes = filter_by_spikerate(spikes,100)
-    spikes = filter_by_metric(metrics,spikes,'isi_viol<2 ')
-    spikes = filter_by_metric(metrics,spikes,'amplitude_cutoff<0.2 ')
+    spikes = filter_by_metric(spikes,metrics,'isi_viol<2 ')
+    spikes = filter_by_metric(spikes,metrics,'amplitude_cutoff<0.2')
 
     return(spikes)
 
