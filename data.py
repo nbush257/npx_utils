@@ -222,12 +222,21 @@ def get_concatenated_spikes(ks2_dir,use_label='default'):
         grp = pd.read_csv(f'{ks2_dir}/cluster_group.tsv', delimiter='\t')
         spikes = pd.merge(left=spikes, right=grp[['cluster_id', 'group']], how='left', on='cluster_id')
         spikes = spikes[spikes.group == 'good']
+        spikes.drop('group',axis=1,inplace=True)
     elif use_label == 'ks':
-        #TODO write filter by KS_Label
+        grp = pd.read_csv(f'{ks2_dir}/cluster_KSLabel.tsv', delimiter='\t')
+        spikes = pd.merge(left=spikes, right=grp[['cluster_id', 'KSLabel']], how='left', on='cluster_id')
+        spikes = spikes[spikes.KSLabel == 'good']
+        spikes.drop('KSLabel',axis=1,inplace=True)
     elif use_label == 'intersect':
-    # TODO write filter by KS_Label and cluster_group.tsv
+        grp = pd.read_csv(f'{ks2_dir}/cluster_group.tsv', delimiter='\t')
+        kslabel = pd.read_csv(f'{ks2_dir}/cluster_KSLabel.tsv', delimiter='\t')
+        temp = pd.merge(grp,kslabel,how='inner',on='cluster_id')
+        temp.query('group=="good" & KSLabel=="good"',inplace=True)
+        clu_list = temp['cluster_id']
+        spikes = spikes[spikes['cluster_id'].isin(clu_list)]
     else:
-        raise NotImplementedError('Use a valid label filter[default,ks,intesect]')
+        raise NotImplementedError('Use a valid label filter[default,ks,intersect]')
 
     spikes.drop('cluster_id',axis=1,inplace=True)
     return(spikes,metrics)
