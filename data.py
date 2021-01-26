@@ -230,6 +230,23 @@ def filter_default_metrics(spikes,metrics):
 
     return(spikes)
 
+def resort_by_depth(spikes):
+    '''
+    changes the cell_id column to be depth ordered, 0 indexed, and sequential
+    That is, cell_id ranges from 0 to N_neurons and there are no skipped indexes
+    :param spikes: spikes dataframe
+    :return: spikes -- spikes dataframe with modified cell_id column
+    '''
+    dd = spikes[['cluster_id','depth']].groupby('cluster_id').mean()
+    dd = dd.reset_index()
+    dd = dd.sort_values('depth')
+    dd = dd.reset_index().rename({'index':'cell_id'},axis=1)
+    dd = dd.drop('depth',axis=1)
+    spikes = spikes.drop('cell_id',axis=1)
+    spikes = spikes.merge(dd,on='cluster_id')
+
+    return(spikes)
+
 def load_filtered_spikes(ks2_dir):
     '''
     Convinience function to load the standard qc controlled spikes
@@ -238,6 +255,7 @@ def load_filtered_spikes(ks2_dir):
     '''
     spikes,metrics = get_concatenated_spikes(ks2_dir)
     spikes = filter_default_metrics(spikes,metrics)
+    spikes = resort_by_depth(spikes)
     return(spikes,metrics)
 
 def create_neo_trains(ks2_dir):
