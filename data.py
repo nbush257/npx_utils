@@ -220,30 +220,42 @@ def get_concatenated_spikes(ks2_dir,use_label='default'):
 
     if use_label == 'default':
         grp = pd.read_csv(f'{ks2_dir}/cluster_group.tsv', delimiter='\t')
-        spikes = pd.merge(left=spikes, right=grp[['cluster_id', 'group']], how='left', on='cluster_id')
-        spikes = spikes[spikes.group == 'good']
-        spikes.drop('group',axis=1,inplace=True)
+        clu_list = grp.query('group=="good"')['cluster_id']
+        spikes = spikes[spikes['cluster_id'].isin(clu_list)]
+        metrics = metrics.merge(grp,on='cluster_id')
     elif use_label == 'ks':
         grp = pd.read_csv(f'{ks2_dir}/cluster_KSLabel.tsv', delimiter='\t')
-        spikes = pd.merge(left=spikes, right=grp[['cluster_id', 'KSLabel']], how='left', on='cluster_id')
-        spikes = spikes[spikes.KSLabel == 'good']
-        spikes.drop('KSLabel',axis=1,inplace=True)
+        clu_list = grp.query('KSLabel=="good"')['cluster_id']
+        spikes = spikes[spikes['cluster_id'].isin(clu_list)]
+        metrics = metrics.merge(grp,on='cluster_id')
     elif use_label == 'intersect':
         grp = pd.read_csv(f'{ks2_dir}/cluster_group.tsv', delimiter='\t')
         kslabel = pd.read_csv(f'{ks2_dir}/cluster_KSLabel.tsv', delimiter='\t')
         temp = pd.merge(grp,kslabel,how='inner',on='cluster_id')
+        metrics = metrics.merge(grp,on='cluster_id')
         temp.query('group=="good" & KSLabel=="good"',inplace=True)
         clu_list = temp['cluster_id']
         spikes = spikes[spikes['cluster_id'].isin(clu_list)]
     else:
         raise NotImplementedError('Use a valid label filter[default,ks,intersect]')
 
-    spikes.drop('cluster_id',axis=1,inplace=True)
+
     return(spikes,metrics)
 
-def filter_by_metric(metrics,spikes,var,expression):
-    #TODO: Make a function that filters the spike dataframe by a particular metric logical expression
-    pass
+def filter_by_metric(metrics,spikes,expression):
+    '''
+    Allen metrics : presence ratio >.95, isi_viol<1, amplitude_cutoff < 0.1
+    :param metrics: the metrics csv
+    :param spikes: the spikes dataframe with columns [ts,cluster_id,depth]
+    :param expression: logical expression to filter the spikes by
+    :return: filtered spikes dataframe
+
+    spikes_filt = filter_by_metric(metrics,spikes,'amplitude_cutoff<0.1')
+    '''
+    clu_list = metrics.query(expression)['cluster_id']
+    spikes = spikes[spikes['cluster_id'].isin(clu_list)]
+    return(spikes)
+
 
 
 
