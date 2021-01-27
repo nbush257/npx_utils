@@ -796,8 +796,8 @@ def get_ccg_peaks(corrected_ccg,thresh = 7):
     # Look for peaks within 25ms
     center_only = chopped[75:125,:]
     compare_mat = np.tile(thresh*shoulder_std,[50,1])
-    exc_connx = np.where(np.any(np.greater(center_only,compare_mat),axis=1))[0]
-    inh_connx = np.where(np.any(np.less(center_only,-compare_mat),axis=1))[0]
+    exc_connx = np.where(np.any(np.greater(center_only,compare_mat),axis=0))[0]
+    inh_connx = np.where(np.any(np.less(center_only,-compare_mat),axis=0))[0]
 
     rm = np.where(shoulder_std==0)
 
