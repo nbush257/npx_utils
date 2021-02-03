@@ -164,13 +164,21 @@ def batch(fn,pleth_chan,dia_chan,save_path):
                     fname = os.path.join(root,ff)
                     print(fname)
                     try:
-                        main(fname,pleth_chan,dia_chan,save_path)
+                        main(fname,pleth_chan,dia_chan,root)
+                        matlab_cmd_string = "matlab -r -nosplash -nodesktop -nojvm bm_mat_proc('" + fname + "')"
+                        os.system(matlab_cmd_string)
+                        print('bob')
+
                     except:
                         print('='*50)
                         print(f'Failure on file {fname}')
                         print('='*50)
     else:
-        main(fn, pleth_chan, dia_chan, save_path)
+        root = os.path.split(fn)[0]
+        main(fn, pleth_chan, dia_chan, root)
+        matlab_cmd_string = "matlab -r -nosplash -nodesktop -nojvm bm_mat_proc('" + fn + "')"
+        os.system(matlab_cmd_string)
+
 
 
 if __name__=='__main__':

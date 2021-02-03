@@ -16,7 +16,11 @@ import utils.ephys.signal as esig
 try:
     from . import models
 except:
-    import models
+    try:
+        import models
+    except:
+        print('could not load tensortools')
+
 
 def bwfilt(x,fs,low=300,high=10000):
     b,a = scipy.signal.butter(4,[low/fs/2,high/fs/2],btype='bandpass')
