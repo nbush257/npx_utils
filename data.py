@@ -20,6 +20,7 @@ import utils.burst as burst
 import utils.brian_utils.postproc as bup
 from spykes.plot import NeuroVis,PopVis
 from tqdm import tqdm
+import scipy.io.matlab as sio
 
 
 def spike_times_npy_to_sec(sp_fullPath, sample_rate = 0, bNPY = True):
@@ -134,20 +135,23 @@ def get_ni_analog(ni_bin_fn, chan_id):
     return(analog_dat)
 
 
-def get_concatenated_spikes(ks2_dir,use_label='default'):
+def get_concatenated_spikes(ks_dir, use_label='default', ks_version=3):
     '''
     Built on top of create_spike_dict and create_spike_df
     Returns a minimal set of concatenated spike data. Probably the most useful
     way to import spike data
-    :param ks2_dir:
+    :param ks_dir:
     :param use_label: define whether to use the phy label(default_, ks_label, or the intersection
     '''
 
     # spike_df = create_spike_df(ks2_dir)
-    ts = np.load(f'{ks2_dir}/spike_times_sec.npy')
-    idx = np.load(f'{ks2_dir}/spike_clusters.npy')
-    metrics = pd.read_csv(f'{ks2_dir}/metrics.csv',index_col=0)
-    depths = np.load(f'{ks2_dir}/channel_positions.npy')[:,1]
+    ts = np.load(f'{ks_dir}/spike_times_sec.npy').ravel()
+    idx = np.load(f'{ks_dir}/spike_clusters.npy').ravel()
+    if ks_version==2:
+        metrics = pd.read_csv(f'{ks_dir}/metrics.csv', index_col=0)
+    elif ks_version==3:
+        metrics = pd.read_csv(f'{ks_dir}/waveform_metrics.csv', index_col=0)
+    depths = np.load(f'{ks_dir}/channel_positions.npy')[:, 1]
     dd = pd.DataFrame()
     dd['peak_channel'] = np.arange(len(depths))
     dd['depth'] = depths
@@ -160,18 +164,18 @@ def get_concatenated_spikes(ks2_dir,use_label='default'):
                       right_on='cluster_id')
 
     if use_label == 'default':
-        grp = pd.read_csv(f'{ks2_dir}/cluster_group.tsv', delimiter='\t')
+        grp = pd.read_csv(f'{ks_dir}/cluster_group.tsv', delimiter='\t')
         clu_list = grp.query('group=="good"')['cluster_id']
         spikes = spikes[spikes['cluster_id'].isin(clu_list)]
         metrics = metrics.merge(grp,on='cluster_id')
     elif use_label == 'ks':
-        grp = pd.read_csv(f'{ks2_dir}/cluster_KSLabel.tsv', delimiter='\t')
+        grp = pd.read_csv(f'{ks_dir}/cluster_KSLabel.tsv', delimiter='\t')
         clu_list = grp.query('KSLabel=="good"')['cluster_id']
         spikes = spikes[spikes['cluster_id'].isin(clu_list)]
         metrics = metrics.merge(grp,on='cluster_id')
     elif use_label == 'intersect':
-        grp = pd.read_csv(f'{ks2_dir}/cluster_group.tsv', delimiter='\t')
-        kslabel = pd.read_csv(f'{ks2_dir}/cluster_KSLabel.tsv', delimiter='\t')
+        grp = pd.read_csv(f'{ks_dir}/cluster_group.tsv', delimiter='\t')
+        kslabel = pd.read_csv(f'{ks_dir}/cluster_KSLabel.tsv', delimiter='\t')
         temp = pd.merge(grp,kslabel,how='inner',on='cluster_id')
         metrics = metrics.merge(grp,on='cluster_id')
         temp.query('group=="good" & KSLabel=="good"',inplace=True)
@@ -312,4 +316,21 @@ def get_event_triggered_st(ts,events,idx,pre_win,post_win):
 
         pop.append(trains)
     return(pop)
+
+
+def load_aux(ks_dir,t=0):
+
+    #TODO: output
+    aux_dir = f'{ks_dir}/../../'
+    epochs = pd.read_csv(glob.glob(aux_dir+'*epochs*.csv')[t])
+    breaths = pd.read_csv(glob.glob(aux_dir+'*pleth*.csv')[t],index_col=0)
+    aux_dat = sio.loadmat(glob.glob(aux_dir+ '*.mat')[t])
+    aux_t = aux_dat['t'].ravel()
+    dia = aux_dat['dia'].ravel()
+    pleth = aux_dat['pleth'].ravel()
+
+
+
+
+
 
