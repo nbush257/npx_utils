@@ -120,10 +120,15 @@ def main(fn,pleth_chan,dia_chan,save_path):
 
 
     mmap,meta = load_mmap(fn)
-    pleth,sr_pleth = load_ds_pleth(mmap,meta,pleth_chan)
-    pleth = pleth/np.std(pleth)
     raw_dia,sr_dia = load_dia_emg(mmap,meta,dia_chan)
     dia_df,dia_sub,sr_dia_sub = filt_int_ds_dia(raw_dia,sr_dia)
+    if pleth_chan<0:
+        pleth = []
+        sr_pleth = sr_dia_sub
+    else:
+        pleth,sr_pleth = load_ds_pleth(mmap,meta,pleth_chan)
+        pleth = pleth/np.std(pleth)
+
 
 
     #Make sure the subsampled dia and pleth have identical SR
@@ -153,6 +158,14 @@ def main(fn,pleth_chan,dia_chan,save_path):
 @click.option('-d','--dia_chan','dia_chan',default=1)
 @click.option('-s','--save_path','save_path',default=None)
 def batch(fn,pleth_chan,dia_chan,save_path):
+    '''
+    Set pleth chan to -1 if no pleth is recorded.
+    :param fn:
+    :param pleth_chan:
+    :param dia_chan:
+    :param save_path:
+    :return:
+    '''
     if os.path.isdir(fn):
         print('Running as batch\n')
         for root,dirs,files in os.walk(fn):
@@ -165,9 +178,11 @@ def batch(fn,pleth_chan,dia_chan,save_path):
                     print(fname)
                     try:
                         main(fname,pleth_chan,dia_chan,root)
-                        matlab_cmd_string = "matlab -r -nosplash -nodesktop -nojvm bm_mat_proc('" + fname + "')"
-                        os.system(matlab_cmd_string)
-                        print('bob')
+                        if pleth_chan>=0:
+                            matlab_cmd_string = "matlab -r -nosplash -nodesktop -nojvm bm_mat_proc('" + fname + "')"
+                            os.system(matlab_cmd_string)
+                        else:
+                            print('No pleth signal so not performing BM')
 
                     except:
                         print('='*50)
@@ -176,9 +191,11 @@ def batch(fn,pleth_chan,dia_chan,save_path):
     else:
         root = os.path.split(fn)[0]
         main(fn, pleth_chan, dia_chan, root)
-        matlab_cmd_string = "matlab -r -nosplash -nodesktop -nojvm bm_mat_proc('" + fn + "')"
-        os.system(matlab_cmd_string)
-
+        if pleth_chan>=0:
+            matlab_cmd_string = "matlab -r -nosplash -nodesktop -nojvm bm_mat_proc('" + fn + "')"
+            os.system(matlab_cmd_string)
+        else:
+            print('No pleth signal so not performing BM')
 
 
 if __name__=='__main__':
