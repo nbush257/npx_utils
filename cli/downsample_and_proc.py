@@ -133,13 +133,14 @@ def main(fn,pleth_chan,dia_chan,save_path):
 
     #Make sure the subsampled dia and pleth have identical SR
     assert(sr_pleth == sr_dia_sub)
-
+    t = np.arange(0, len(dia_sub)/sr_pleth, 1 / sr_pleth)
+    t = t[:len(dia_sub)]
     # Save the downsampled data to a mat file
     data_dict = {
         'pleth':pleth,
         'dia':dia_sub,
         'sr':sr_pleth,
-        't':np.arange(0,len(pleth)/sr_pleth,1/sr_pleth)
+        't':t
     }
     save_fn,prefix = make_save_fn(fn,save_path)
     sio.savemat(save_fn,data_dict,oned_as='column')
