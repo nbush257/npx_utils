@@ -56,7 +56,7 @@ def plot_cell_summary_over_time(spikes,neuron_id,epochs,dia_df,phi,sr):
         btrain = np.zeros_like(phi_slice)
 
         spt = sub_spikes - t0
-        sp_idx = np.round(spt * sr).astype('int')
+        sp_idx = np.round(spt * sr).astype('int')-1
         btrain[sp_idx] = 1
         rr, theta_k, theta, L_dir = proc.angular_response_hist(phi_slice, btrain, 25)
         kl = proc.compute_KL(phi_slice,btrain,25)
@@ -197,7 +197,7 @@ def plot_depth_map(vals,depths):
 
 
 def plot_raster_summary(spikes,phys_df):
-    raster, cell_id, bins = proc.bin_trains(spikes.ts, spikes.cell_id, binsize=5, start_time=0, max_time=phys_df.index[-1])
+    raster, cell_id, bins = proc.bin_trains(spikes.ts, spikes.cell_id, binsize=5, start_time=0, max_time=spikes.ts.iloc[-1])
     f = plt.figure(figsize=(4,7))
     gs = f.add_gridspec(7,1)
     ax1 = f.add_subplot(gs[:-2,0])
@@ -310,7 +310,8 @@ def plot_tensortools_factors(mdl,raster_bins,dd):
     f,ax = plt.subplots(nrows=n_rank,ncols=3,sharex='col',figsize=(5,7))
     cmap = np.tile(cm.Dark2(range(7)),[2,1])
     for ii in range(n_rank):
-        ax[ii,0].plot(raster_bins,factors[0][:,ii],lw=1,color=cmap[ii])
+        ax[ii,0].plot(raster_bins*1000,factors[0][:,ii],lw=1,color=cmap[ii])
+        ax[ii,0].axvline(0,color='r',ls=':')
         ax[ii,1].bar(dd,factors[1][:,ii],color=cmap[ii],width=100)
         ax[ii,2].plot(factors[2][:,ii],'.',ms=3,color=cmap[ii],alpha=0.4)
     sns.despine()

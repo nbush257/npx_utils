@@ -77,7 +77,6 @@ def calc_phase(x):
             xa_tot[start + overlap:stop] = xa[overlap:]
     return(phi)
 
-
 def shift_phi(phi,insp_onset):
     '''
     Shifts the phi such that 0 is inspiration onset
@@ -731,7 +730,6 @@ def jitter_NEB(data,l):
     return(output)
 
 
-
 def ccg_v2(ts,idx,events,max_time=1000,event_window=1):
 
 
@@ -781,6 +779,7 @@ def ccg_v2(ts,idx,events,max_time=1000,event_window=1):
                 raw_ccg[:,count] = ccg / np.multiply(np.sqrt(FR[ii] * FR[jj]), theta)
 
     return(ccg_out,raw_ccg)
+
 
 def get_ccg_peaks(corrected_ccg,thresh = 7):
     '''

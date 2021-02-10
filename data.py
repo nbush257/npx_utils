@@ -135,7 +135,7 @@ def get_ni_analog(ni_bin_fn, chan_id):
     return(analog_dat)
 
 
-def get_concatenated_spikes(ks_dir, use_label='default', ks_version=3):
+def get_concatenated_spikes(ks_dir, use_label='intersect', ks_version=3):
     '''
     Built on top of create_spike_dict and create_spike_df
     Returns a minimal set of concatenated spike data. Probably the most useful
@@ -251,14 +251,15 @@ def resort_by_depth(spikes):
 
     return(spikes)
 
-def load_filtered_spikes(ks2_dir):
+def load_filtered_spikes(ks2_dir,ks_version=3):
     '''
     Convinience function to load the standard qc controlled spikes
     :param ks2_dir:
     :return:
     '''
     spikes,metrics = get_concatenated_spikes(ks2_dir)
-    spikes = filter_default_metrics(spikes,metrics)
+    if ks_version !=3:
+        spikes = filter_default_metrics(spikes,metrics)
     spikes = resort_by_depth(spikes)
     return(spikes,metrics)
 
@@ -320,7 +321,6 @@ def get_event_triggered_st(ts,events,idx,pre_win,post_win):
 
 def load_aux(ks_dir,t=0):
 
-    #TODO: output
     aux_dir = f'{ks_dir}/../../'
     epochs = pd.read_csv(glob.glob(aux_dir+'*epochs*.csv')[t])
     breaths = pd.read_csv(glob.glob(aux_dir+'*pleth*.csv')[t],index_col=0)
@@ -328,6 +328,14 @@ def load_aux(ks_dir,t=0):
     aux_t = aux_dat['t'].ravel()
     dia = aux_dat['dia'].ravel()
     pleth = aux_dat['pleth'].ravel()
+    sr = aux_dat['sr'].ravel()[0]
+    aux_dat = {}
+    aux_dat['t'] = aux_t
+    aux_dat['dia'] = dia
+    aux_dat['pleth'] = pleth
+    aux_dat['sr'] = sr
+
+    return(epochs,breaths,aux_dat)
 
 
 
