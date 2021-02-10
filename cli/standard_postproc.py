@@ -139,6 +139,12 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     cmap = cm.copper(np.linspace(0, 1, len(epoch_t)))
     KL = []
 
+
+    sig = neo.AnalogSignal(aux['dia'], units='V', sampling_rate=aux['sr'] * pq.Hz)
+    n_train = neo.SpikeTrain(ts[ts<epoch_t[-1]], t_stop=epoch_t[-1] * pq.s, units=pq.s)
+    sfc, freqs = elephant.sta.spike_field_coherence(sig, n_train, nperseg=4096)
+    COH = np.max(sfc.magnitude)
+
     for ii, (t0, tf) in enumerate(zip(epochs_t0, epochs_tf)):
         sub_spikes = ts[ts > t0]
         sub_spikes = sub_spikes[sub_spikes < tf]
@@ -153,10 +159,7 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
         btrain[sp_idx] = 1
         rr, theta_k, theta, L_dir = proc.angular_response_hist(phi_slice, btrain, 25)
 
-        n_train = neo.SpikeTrain(spt,t_stop=tf*pq.s,units=pq.s)
-        sig = neo.AnalogSignal(aux['pleth'],units='V',sampling_rate=aux['sr']*pq.Hz)
-        sfc,freqs = elephant.sta.spike_field_coherence(sig,n_train,nperseg=4096)
-        COH = np.max(sfc.magnitude)
+        print(COH)
 
         kl = proc.compute_KL(phi_slice,btrain,25)
         KL.append(kl)
@@ -164,7 +167,7 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
         plt.polar(theta_k, rr * sr, color=cmap[ii])
     plt.xticks([0,np.pi/2,np.pi,3*np.pi/2])
 
-    plt.suptitle(f'Neuron {neuron_id}; loc:{depth:0.0f}um; mod_depth:{np.mean(COH):0.2f}')
+    plt.suptitle(f'Neuron {neuron_id}; loc:{depth:0.0f}um; Coh.:{np.mean(COH):0.2f}')
 
     # Get diaphragm triggered
     ax1 = f.add_subplot(gs[1,:2])

@@ -336,7 +336,9 @@ def load_aux(ks_dir,t=0):
             dum['t0'] += last_time
             dum['tf'] += last_time
             last_time+=t_max/60
-            dum['tf'].iloc[-1] = last_time
+            if np.isnan(dum['tf'].iloc[-1]):
+                dum['tf'].iloc[-1] = last_time
+
             epochs = pd.concat([epochs,dum])
     else:
         epochs = pd.read_csv(glob.glob(aux_dir+'*epochs*.csv')[t])
