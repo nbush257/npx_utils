@@ -322,9 +322,27 @@ def get_event_triggered_st(ts,events,idx,pre_win,post_win):
 def load_aux(ks_dir,t=0):
 
     aux_dir = f'{ks_dir}/../../'
-    epochs = pd.read_csv(glob.glob(aux_dir+'*epochs*.csv')[t])
-    breaths = pd.read_csv(glob.glob(aux_dir+'*pleth*.csv')[t],index_col=0)
-    aux_dat = sio.loadmat(glob.glob(aux_dir+ '*.mat')[t])
+    epoch_list = glob.glob(aux_dir+'*epochs*.csv')
+    if len(epoch_list)>1:
+        breaths = pd.read_csv(glob.glob(aux_dir + '*tcat*pleth*.csv')[0], index_col=0)
+        aux_dat = sio.loadmat(glob.glob(aux_dir + '*tcat*.mat')[0])
+        epochs = pd.DataFrame()
+        last_time =0
+        mat_list = glob.glob(aux_dir+'*.mat')[:len(epoch_list)]
+        for ii,ff in enumerate(epoch_list):
+            mat_dum = sio.loadmat(mat_list[ii])
+            t_max = mat_dum['t'][-1][0]
+            dum = pd.read_csv(ff)
+            dum['t0'] += last_time
+            dum['tf'] += last_time
+            last_time+=t_max/60
+            dum['tf'].iloc[-1] = last_time
+            epochs = pd.concat([epochs,dum])
+    else:
+        epochs = pd.read_csv(glob.glob(aux_dir+'*epochs*.csv')[t])
+        breaths = pd.read_csv(glob.glob(aux_dir+'*pleth*.csv')[t],index_col=0)
+        aux_dat = sio.loadmat(glob.glob(aux_dir+ '*.mat')[t])
+
     aux_t = aux_dat['t'].ravel()
     dia = aux_dat['dia'].ravel()
     pleth = aux_dat['pleth'].ravel()
@@ -334,6 +352,7 @@ def load_aux(ks_dir,t=0):
     aux_dat['dia'] = dia
     aux_dat['pleth'] = pleth
     aux_dat['sr'] = sr
+    breaths = breaths.reset_index().drop('Var1',axis=1)
 
     return(epochs,breaths,aux_dat)
 

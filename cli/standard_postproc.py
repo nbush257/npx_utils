@@ -14,6 +14,9 @@ import sys
 import glob
 from tqdm import tqdm
 import re
+import elephant
+import neo
+import quantities as pq
 sys.path.append('../')
 from sklearn.preprocessing import StandardScaler
 
@@ -104,7 +107,7 @@ def plot_long_raster(spikes,breaths,epochs):
     plt.tight_layout()
 
 
-def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_times):
+def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_times,aux):
     '''
     assumes continuous epochs
     :param spikes:
@@ -149,13 +152,19 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
         sp_idx = np.round(spt * sr).astype('int')-1
         btrain[sp_idx] = 1
         rr, theta_k, theta, L_dir = proc.angular_response_hist(phi_slice, btrain, 25)
+
+        n_train = neo.SpikeTrain(spt,t_stop=tf*pq.s,units=pq.s)
+        sig = neo.AnalogSignal(aux['pleth'],units='V',sampling_rate=aux['sr']*pq.Hz)
+        sfc,freqs = elephant.sta.spike_field_coherence(sig,n_train,nperseg=4096)
+        COH = np.max(sfc.magnitude)
+
         kl = proc.compute_KL(phi_slice,btrain,25)
         KL.append(kl)
         rr = np.hstack([rr,rr[0]])
         plt.polar(theta_k, rr * sr, color=cmap[ii])
     plt.xticks([0,np.pi/2,np.pi,3*np.pi/2])
 
-    plt.suptitle(f'Neuron {neuron_id}; loc:{depth:0.0f}um; mod_depth:{np.mean(KL):0.2f}')
+    plt.suptitle(f'Neuron {neuron_id}; loc:{depth:0.0f}um; mod_depth:{np.mean(COH):0.2f}')
 
     # Get diaphragm triggered
     ax1 = f.add_subplot(gs[1,:2])
@@ -263,7 +272,6 @@ def main(ks2_dir,p_save=None):
 
     plt.style.use('seaborn-paper')
     epochs,breaths,aux = data.load_aux(ks2_dir)
-    breaths = breaths.reset_index().drop('Var1',axis=1)
     spikes = data.load_filtered_spikes(ks2_dir)[0]
 
     phi = proc.calc_phase(aux['pleth'])
@@ -293,6 +301,8 @@ def main(ks2_dir,p_save=None):
     L_DIR = []
     CELL_ID = []
     MOD_DEPTH = []
+    COH=[]
+    LAG = []
     epochs_time = np.arange(0,1501,300)
     df_phase_tune = pd.DataFrame()
 
@@ -324,9 +334,13 @@ def main(ks2_dir,p_save=None):
         rr,theta_k,theta,L_dir = proc.angular_response_hist(phi_slice,btrain,nbins=25)
         mod_depth = (np.max(rr)-np.min(rr))/np.mean(rr)
 
+        n_train = neo.SpikeTrain(spt,t_stop=max_time*pq.s,units=pq.s)
+        sig = neo.AnalogSignal(aux['dia'],units='V',sampling_rate=aux['sr']*pq.Hz)
+        sfc,freqs = elephant.sta.spike_field_coherence(sig,n_train,nperseg=4096)
+        COH.append(np.max(sfc.magnitude))
+        LAG.append(theta_k[:-1][np.argmax(rr)])
         dum[cell_id] = rr
         df_phase_tune = pd.concat([df_phase_tune,dum],axis=1)
-
 
         THETA.append(theta)
         L_DIR.append(L_dir)
@@ -337,11 +351,14 @@ def main(ks2_dir,p_save=None):
     df_sc['l_dir'] = L_DIR
     df_sc['cell_id'] = CELL_ID
     df_sc['mod_depth'] = MOD_DEPTH
-
+    df_sc['coherence'] = COH
+    df_sc['phase_lag'] = LAG
+    dd = spikes.groupby(['cell_id']).mean()['depth'].reset_index()
+    df_sc = df_sc.merge(dd,how='inner',on='cell_id')
     df_sc.to_csv(os.path.join(p_save,f'{prefix}_phase_tuning_stats.csv'))
     df_phase_tune.to_csv(os.path.join(p_save,f'{prefix}_phase_tuning_curves.csv'))
 
-    ordered_mod_depth = df_sc.sort_values('mod_depth',ascending=False)['cell_id'].values
+    ordered_mod_depth = df_sc.sort_values('coherence',ascending=False)['cell_id'].values
 
     sc_dir = os.path.join(p_save,'sc_figs')
     try:
@@ -352,7 +369,7 @@ def main(ks2_dir,p_save=None):
     max_time = aux['t'][-1]
     for ii,cell_id in enumerate(ordered_mod_depth):
         print(ii)
-        f = plot_single_cell_summary(spikes[spikes.ts<max_time],cell_id,epochs_time,breaths,phi,aux['sr'],opto_time)
+        f = plot_single_cell_summary(spikes[spikes.ts<max_time],cell_id,epochs_time,breaths,phi,aux['sr'],opto_time,aux)
         f.savefig(os.path.join(sc_dir,f'{prefix}_summary_modrank{ii}_cellid{cell_id}.png'),dpi=150)
         plt.close('all')
 
