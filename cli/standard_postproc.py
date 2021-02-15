@@ -241,15 +241,15 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
 @click.command()
 @click.argument('ks2_dir')
 def main(ks2_dir,p_save=None):
-    run_tensor=False
+    run_tensor=True
 
     # (DONE) Plot long time-scale raster of all neurons with respiratory rate
     # (DONE) Plot short timescale raster of all neurons with pleth and dia integrated
     # (DONE) Plot respiratory rate and heart rate
     # (DONE) Plot phase tuning and event psth of dia on for each neuron individually.
     #   Include gasp tuning (?) Include apnea tuning (?)
-    # Plot event triggered raster of several example breaths
-    # Plot raster/psth of opto-triggered respones.
+    # (Done)Plot event triggered raster of several example breaths
+    # (DONE) Plot raster/psth of opto-triggered respones.
     # Organize plots into a single image
     # Plot depth map of phase tuning.
     # Plot depth map of Tuning depth

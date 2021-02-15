@@ -323,6 +323,8 @@ def load_aux(ks_dir,t=0):
 
     aux_dir = f'{ks_dir}/../../'
     epoch_list = glob.glob(aux_dir+'*epochs*.csv')
+    if len(epoch_list) == 0:
+        raise ValueError(f'No epoch csv found in {aux_dir}')
     if len(epoch_list)>1:
         breaths = pd.read_csv(glob.glob(aux_dir + '*tcat*pleth*.csv')[0], index_col=0)
         aux_dat = sio.loadmat(glob.glob(aux_dir + '*tcat*.mat')[0])
