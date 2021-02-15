@@ -2,6 +2,7 @@
 import numpy as np
 import tensortools as tt
 import matplotlib.pyplot as plt
+import pandas as pd
 def raster2tensor(raster,raster_bins,events,pre = .100,post = .200):
     '''
     Given the binned spikerates over time and a series of events,
@@ -92,29 +93,6 @@ def get_best_TCA(TT,max_rank=15,plot_tgl=True):
     if plot_tgl:
         axx.vlines(ranks[best],axx.get_ylim()[0],axx.get_ylim()[1],lw=3,ls='--')
     return(best_decomp,[ax,axx])
-
-
-def classify_breaths(dia_df, dia_int, pleth):
-    '''
-    Classify periods of apnea, sigh, gasp.
-    :return:
-    '''
-
-    # Get the plethysmography amplitude for each associated diaphragm burst
-    ons = np.sort(dia_df['on_samp'].values)
-    pamp = np.empty(len(ons))
-    for ii in range(len(ons)-1):
-        pslice = pleth[ons[ii]:ons[ii+1]]
-        pamp[ii] = np.max(pslice)
-
-    pslice = pleth[ons[-1]:]
-    pamp[-1] = np.max(pslice)
-    pamp[pamp<0] = 0
-    dia_df['pamp'] = pamp
-
-
-
-
 
 
 

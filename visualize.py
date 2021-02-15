@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import proc
 import matplotlib.cm as cm
 import pandas as pd
+from mpltools import color
 
 def spykes_raster(raster):
     tt = np.arange(raster['window'][0],raster['window'][1],raster['binsize'])
@@ -325,5 +326,41 @@ def plot_tensortools_factors(mdl,raster_bins,dd):
     return(f)
 
 
+def plot_average_breaths_by_type(breaths,aux):
+
+    def plotter(eup, sigh, apnea, t, ax=None):
+        cmap = plt.cm.Dark2(np.arange(3))
+        if ax is None:
+            f = plt.figure()
+            ax = f.add_subplot(111)
+
+        m = np.median(eup, 1)
+        iqr = np.percentile(eup, [25, 75], 1)
+        ax.plot(t, m,color=cmap[0])
+        ax.fill_between(t, iqr[0], iqr[1], color=cmap[0],alpha=0.2)
+
+        m = np.median(apnea, 1)
+        iqr = np.percentile(apnea, [25, 75], 1)
+        ax.plot(t, m,color=cmap[1])
+        ax.fill_between(t, iqr[0], iqr[1], color=cmap[1],alpha=0.2)
+
+        m = np.median(sigh, 1)
+        iqr = np.percentile(sigh, [25, 75], 1)
+        ax.plot(t, m,color=cmap[2])
+        ax.fill_between(t, iqr[0], iqr[1], color=cmap[2],alpha=0.2)
+
+        return (ax)
+    ep,ap,sp,t = models.get_breaths(breaths,aux['sr'],aux['pleth'])
+    ed,ad,sd,t = models.get_breaths(breaths,aux['sr'],aux['dia'])
+    f,ax = plt.subplots(nrows=2,figsize=(3,2),sharex=True)
+    plotter(ep,sp,ap,t,ax=ax[0])
+    plotter(ed,sd,ad,t,ax=ax[1])
+    sns.despine()
+    ax[0].axvline(0,ls=':',color='k')
+    ax[1].axvline(0,ls=':',color='k')
+    ax[0].set_ylabel('pleth')
+    ax[1].set_ylabel('$\int$ dia')
+    ax[1].legend(['eupnea','apnea','sigh'],fontsize=6,bbox_to_anchor=[0.8,1])
+    plt.tight_layout()
 
 

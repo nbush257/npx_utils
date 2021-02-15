@@ -77,6 +77,7 @@ def calc_phase(x):
             xa_tot[start + overlap:stop] = xa[overlap:]
     return(phi)
 
+
 def shift_phi(phi,insp_onset):
     '''
     Shifts the phi such that 0 is inspiration onset
@@ -811,6 +812,66 @@ def get_ccg_peaks(corrected_ccg,thresh = 7):
     inh_connx = inh_connx[mask]
 
     return(exc_connx,inh_connx)
+
+
+def compute_breath_type(breaths):
+    '''
+    Requires the breaths dataframe.
+    :param breaths:
+    :return:
+    '''
+    temp = breaths.copy()
+
+    filt_breaths = temp-temp.rolling(50).median()
+    MAD = lambda x: np.nanmedian(np.abs(x - np.nanmedian(x)))
+    rolling_MAD = temp.rolling(window=51, center=True).apply(MAD)*10
+    idx = filt_breaths['auc']>rolling_MAD['auc']
+    temp['type'] = 'eupnea'
+    temp.loc[idx,'type'] = 'sigh'
+    apnea_mask = temp['inhale_onsets'].isna()
+    temp.loc[apnea_mask,'type']= 'apnea'
+
+    return temp
+
+
+def get_breaths(breaths,sr,analog):
+    t_pre = 0.2
+    t_post= 0.5
+    t_pre_samp = int(t_pre*sr)
+    t_post_samp = int(t_post*sr)
+    counts = breaths.groupby('type').count()['on_sec']
+    e_count=0
+    a_count=0
+    s_count=0
+
+    eup = np.zeros([t_pre_samp + t_post_samp,counts['eupnea']])
+    apnea = np.zeros([t_pre_samp + t_post_samp,counts['apnea']])
+    sigh = np.zeros([t_pre_samp + t_post_samp,counts['sigh']])
+    t = np.arange(-t_pre,t_post,1/sr)[:eup.shape[0]]
+
+    for ii,data in breaths[['on_sec','type']].iterrows():
+        on = data['on_sec']
+        type = data['type']
+        on_samp = int(on*sr)
+        if on_samp-t_pre_samp<0:
+            continue
+        if on_samp+t_post_samp>len(analog):
+            continue
+        ana_slice = analog[on_samp-t_pre_samp:on_samp+t_post_samp]
+
+        if type=='eupnea':
+            eup[:,e_count] = ana_slice
+            e_count+=1
+        elif type=='apnea':
+            apnea[:,a_count] = ana_slice
+            a_count+=1
+        elif type=='sigh':
+            sigh[:,s_count] = ana_slice
+            s_count+=1
+        else:
+            pass
+
+    return(eup,sigh,apnea,t)
 
 
 
