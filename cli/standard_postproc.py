@@ -1,4 +1,5 @@
 import click
+import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.signal
@@ -119,7 +120,7 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     :param sr:
     :return:
     '''
-
+    binsize=10
     # Sample data
     ts = spikes[spikes.cell_id==neuron_id].ts.values
     if ts.shape[0]==0:
@@ -132,8 +133,8 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     neuron = NeuroVis(ts)
 
     # Start plotting
-    f = plt.figure(figsize=(7,7))
-    gs = f.add_gridspec(nrows=4,ncols=6)
+    f = plt.figure(figsize=(9,8))
+    gs = f.add_gridspec(nrows=5,ncols=6)
     ax0 = f.add_subplot(gs[0,:2],projection='polar')
 
     # Plot the polar rsponses
@@ -159,13 +160,12 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
         sp_idx = np.round(spt * sr).astype('int')-1
         btrain[sp_idx] = 1
         rr, theta_k, theta, L_dir = proc.angular_response_hist(phi_slice, btrain, 25)
-
-        print(COH)
-
         kl = proc.compute_KL(phi_slice,btrain,25)
         KL.append(kl)
         rr = np.hstack([rr,rr[0]])
         plt.polar(theta_k, rr * sr, color=cmap[ii])
+
+
     plt.xticks([0,np.pi/2,np.pi,3*np.pi/2])
 
     plt.suptitle(f'Neuron {neuron_id}; loc:{depth:0.0f}um; Coh.:{np.mean(COH):0.2f}')
@@ -174,20 +174,19 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     ax1 = f.add_subplot(gs[1,:2])
     # This line is needed to throw out all time after last epoch, which is gnerally longer thean all specified epochs
     dia_df = dia_df[dia_df['cat']<dia_df.cat.max()]
-    psth_dia_off = neuron.get_psth(df=dia_df, event='on_sec', conditions='cat',colors=cmap,window=[-250,500],binsize=20)
+    psth_dia_off = neuron.get_psth(df=dia_df, event='on_sec', conditions='cat',colors=cmap,window=[-250,500],binsize=binsize)
     plt.title(f'Dia On')
     legend_vals = ['Dia On']
-    legend_vals += [f'{x/60}-{y/60}m' for x, y in zip(epochs_t0, epochs_tf)]
     leg = plt.legend([])
     ax1.get_legend().remove()
 
-    ax2 = f.add_subplot(gs[2,:2],sharex=ax1,sharey=ax1)
-    psth_dia_off = neuron.get_psth(df=dia_df, event='off_sec', conditions='cat',colors=cmap,window=[-250,500],binsize=20)
+    ax2 = f.add_subplot(gs[3,:2],sharex=ax1,sharey=ax1)
+    psth_dia_off = neuron.get_psth(df=dia_df, event='off_sec', conditions='cat',colors=cmap,window=[-250,500],binsize=binsize)
     plt.title(f'Dia Off')
     plt.ylabel('')
 
     legend_vals = ['Trigger']
-    legend_vals += [f'{x}s - {y}s' for x, y in zip(epochs_t0, epochs_tf)]
+    legend_vals += [f'{x/60}-{y/60}m' for x, y in zip(epochs_t0, epochs_tf)]
     plt.legend(legend_vals,bbox_to_anchor=(1.2,0.5),loc='center right',fontsize=6)
 
     ax3 = f.add_subplot(gs[:,2:4])
@@ -207,6 +206,13 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     ax4.plot(1/dia_df['postBI'],dia_df['on_sec']/60,'.',color='tab:red',alpha=0.3)
 
     ax4.set_xlabel('Freq. (Hz)')
+
+    ax7 = f.add_subplot(gs[2,:2],sharex=ax1)
+    psth_dia_off = neuron.get_psth(df=dia_df.query('type!="apnea"'), event='on_sec', colors= cm.Dark2([2,3]),conditions='type',window=[-250,500],binsize=binsize)
+    plt.title(f'Eup/sigh')
+    legend_vals = ['Dia On','eupnea','sigh']
+    leg = plt.legend(legend_vals)
+    plt.legend(legend_vals,bbox_to_anchor=(1.2,0.5),loc='center right',fontsize=6)
 
     if opto_times is not None:
         ax5 = f.add_subplot(gs[-1,:2])
@@ -234,6 +240,9 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
         ax6.plot(bb[xx],yy,'k.',alpha=0.5)
         ax6.set_ylabel('stim no.',color='c')
         ax6.set_ylim(0,opto_times.shape[0])
+
+
+
     plt.tight_layout(w_pad=-1)
 
     return(f)
@@ -271,6 +280,70 @@ def compute_opto_tag(ts,opto_time):
     return(raster,tagged)
 
 
+def plot_mean_breaths(spikes,breaths,max_time,p_save,prefix):
+    def mean_tensor(TT,raster):
+        mean_breath = np.mean(TT, 2)
+        mean_breath = (mean_breath - np.mean(raster, 1)) / np.std(raster, 1)
+        mean_breath[np.isnan(mean_breath)] = 0
+        return(mean_breath)
+
+    def do_plot(mean_dat,scl = None,good_neurons=None):
+        f, ax = plt.subplots(nrows=1, ncols=2, figsize=(4, 5))
+        cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
+        plt.sca(ax[0])
+        if scl is None:
+            scl = np.max(np.abs(mean_dat))
+
+        plt.pcolormesh(raster_bins, np.arange(len(order)), mean_dat.T[order, :], cmap='RdBu_r', vmin=-scl, vmax=scl)
+        plt.axvline(0, ls=':', color='k')
+        plt.axvline(burst_dur, ls=':', color='g')
+        plt.text(0, mean_dat.shape[1] - 1, 'Burst', ha='left', va='top', fontsize=8)
+        plt.xlabel('time [s]')
+        plt.ylabel('neurons')
+        plt.title('Z-scored FR')
+        # plt.colorbar()
+
+        plt.sca(ax[1])
+        breath_ordered = mean_dat[:, order]
+        if good_neurons is None:
+            good_neurons = np.where(np.max(np.abs(breath_ordered), 0) > 0.2)[0]
+        breath_ordered = breath_ordered[:, good_neurons]
+        cc = plt.pcolormesh(raster_bins, np.arange(breath_ordered.shape[1]), breath_ordered.T, cmap='RdBu_r', vmin=-scl,
+                            vmax=scl)
+        plt.axvline(0, ls=':', color='k')
+        plt.axvline(burst_dur, ls=':', color='g')
+        plt.text(0, breath_ordered.shape[1] - 1, 'Burst', ha='left', va='top', fontsize=8)
+        plt.xlabel('time [s]')
+        plt.title('Z-scored >0.2')
+
+        f.subplots_adjust(right=0.8)
+        f.colorbar(cc, cax=cbar_ax)
+        sns.despine()
+        return(good_neurons)
+
+    raster,cell_id,bins = proc.bin_trains(spikes.ts,spikes.cell_id,max_time=max_time,binsize=.05)
+    burst_dur = breaths['duration_sec'].mean()
+    pbi_dur = breaths['postBI'].mean()
+
+    TT_eup,raster_bins = models.raster2tensor(raster,bins,breaths.query('type=="eupnea"')['on_sec'],pre=0.1,post=burst_dur+pbi_dur)
+    # TT_ap,raster_bins = models.raster2tensor(raster,bins,breaths.query('type=="apnea"')['on_sec'],pre=0.1,post=burst_dur+pbi_dur)
+    # TT_sigh,raster_bins = models.raster2tensor(raster,bins,breaths.query('type=="sigh"')['on_sec'],pre=0.1,post=burst_dur+pbi_dur)
+
+    mean_eup = mean_tensor(TT_eup,raster)
+    # mean_ap = mean_tensor(TT_ap,raster)
+    # mean_sigh = mean_tensor(TT_sigh,raster)
+
+
+    order = np.argsort(np.nanargmax(mean_eup,0))
+    scl = np.max(np.abs(mean_eup))
+
+    good_neurons = do_plot(mean_eup,scl)
+    # do_plot(mean_ap,scl,good_neurons)
+    # do_plot(mean_sigh,scl=None,good_neurons = good_neurons)
+    # do_plot(mean_sigh-mean_eup,good_neurons=good_neurons)
+
+    plt.savefig(os.path.join(p_save,f'{prefix}_mean_breath.png'),dpi=300)
+
 
 
 @click.command()
@@ -285,22 +358,39 @@ def main(ks2_dir,p_save=None):
     #   Include gasp tuning (?) Include apnea tuning (?)
     # (Done)Plot event triggered raster of several example breaths
     # (DONE) Plot raster/psth of opto-triggered respones.
-    # Organize plots into a single image
+    # (DONE) Organize plots into a single image
     # Plot depth map of phase tuning.
     # Plot depth map of Tuning depth
     # Plot depth map of tagged neurons
     # Plot Dia/pleth and onsets to verify the detections
-    # Compute tagged boolean for all neuron
+    # (DONE) Compute tagged boolean for all neuron
     # Compute recording depth, preferred phase, modulation depth, and is-modulated for all neurons
-    # Save Unit level data in csv
+    # (DONE) Save Unit level data in csv
 
     # NEEDS: ks2dir,ni_binary, epoch times + labels, channels
 
     # ========================= #
     #  LOAD DATA #
     # ========================= #
+    dt = datetime.datetime.now()
+    date_str = f'{dt.year}-{dt.month:02.0f}-{dt.day:02.0f}'
     if p_save is None:
         p_save = os.path.join(ks2_dir,'..')
+        p_results = f'/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/results/{date_str}_standard_postproc'
+        p_sc = f'/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/results/{date_str}_standard_postproc/sc_figs'
+    else:
+        p_results =p_save
+        p_sc = p_save
+
+    try:
+        os.makedirs(p_results)
+    except:
+        pass
+    try:
+        os.makedirs(p_sc)
+    except:
+        pass
+
 
     mouse_id = re.search('m\d\d\d\d-\d\d',ks2_dir).group()
     gate_id = int(re.search('_g\d_',ks2_dir).group()[2])
@@ -333,6 +423,13 @@ def main(ks2_dir,p_save=None):
     viz.plot_raster_example(spikes,aux['sr'],aux['pleth'],aux['dia'],500,5)
     plt.savefig(os.path.join(p_save,f'{prefix}_example_raster_short.png'),dpi=150)
     plt.close('all')
+
+    # =============================== #
+    # Compute the sighs and apneas, then plot mean breaths
+    max_time = 1500
+    breaths2 = proc.compute_breath_type(breaths.query('on_sec<@max_time')) # classify sighs, apneas
+    plot_mean_breaths(spikes,breaths2,max_time,p_save,prefix)
+
 
     # =============================== #
     # Calculate and plot single cell summaries
@@ -431,7 +528,6 @@ def main(ks2_dir,p_save=None):
         plt.close('all')
 
 
-
     # =====================
     # Run the tensor factorization without affine warping
     # =====================
@@ -440,45 +536,6 @@ def main(ks2_dir,p_save=None):
     burst_dur = breaths['duration_sec'].mean()
     pbi_dur = breaths['postBI'].mean()
     TT,raster_bins = models.raster2tensor(raster,bins,breaths['on_sec'],pre=0.1,post=burst_dur+pbi_dur)
-
-
-    # Plot the mean population traces aligned to breath
-    mean_breath = np.mean(TT,2)
-    mean_breath = (mean_breath-np.mean(raster,1))/np.std(raster,1)
-    mean_breath[np.isnan(mean_breath)] = 0
-
-    order = np.argsort(np.nanargmax(mean_breath,0))
-
-    f,ax = plt.subplots(nrows=1,ncols=2,figsize=(4,5))
-    cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
-    plt.sca(ax[0])
-    scl = np.max(np.abs(mean_breath))
-    plt.pcolormesh(raster_bins,np.arange(len(order)),mean_breath.T[order,:],cmap='RdBu_r',vmin=-scl,vmax=scl)
-    plt.axvline(0,ls=':',color='k')
-    plt.axvline(burst_dur,ls=':',color='g')
-    plt.text(0,mean_breath.shape[1]-1,'Burst',ha='left',va='top',fontsize=8)
-    plt.xlabel('time [s]')
-    plt.ylabel('neurons')
-    plt.title('Z-scored FR')
-    # plt.colorbar()
-
-    plt.sca(ax[1])
-    scl = np.max(np.abs(mean_breath))
-    breath_ordered = mean_breath[:,order]
-    breath_ordered = breath_ordered[:,np.where(np.max(np.abs(breath_ordered),0)>0.1)[0]]
-    cc = plt.pcolormesh(raster_bins,np.arange(breath_ordered.shape[1]),breath_ordered.T,cmap='RdBu_r',vmin=-scl,vmax=scl)
-    plt.axvline(0,ls=':',color='k')
-    plt.axvline(burst_dur,ls=':',color='g')
-    plt.text(0,breath_ordered.shape[1]-1,'Burst',ha='left',va='top',fontsize=8)
-    plt.xlabel('time [s]')
-    plt.title('Z-scored >0.1')
-
-    f.subplots_adjust(right=0.8)
-    f.colorbar(cc, cax=cbar_ax)
-    sns.despine()
-    plt.savefig(os.path.join(p_save,f'{prefix}_mean_breath.png'),dpi=300)
-
-
 
 
 
