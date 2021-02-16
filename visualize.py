@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import proc
 import matplotlib.cm as cm
 import pandas as pd
-from mpltools import color
+import models
 
 def spykes_raster(raster):
     tt = np.arange(raster['window'][0],raster['window'][1],raster['binsize'])

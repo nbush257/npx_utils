@@ -17,6 +17,7 @@ import re
 import elephant
 import neo
 import quantities as pq
+import scipy.io.matlab as sio
 sys.path.append('../')
 from sklearn.preprocessing import StandardScaler
 
@@ -107,7 +108,7 @@ def plot_long_raster(spikes,breaths,epochs):
     plt.tight_layout()
 
 
-def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_times,aux):
+def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_times,aux,is_tagged):
     '''
     assumes continuous epochs
     :param spikes:
@@ -211,7 +212,10 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
         ax5 = f.add_subplot(gs[-1,:2])
         psth_opto = neuron.get_psth(df=opto_times,event=0,colors=cmap,window=[-20,20],binsize=2)
         raster_sc = neuron.get_raster(df=opto_times,event=0,window=[-20,20],binsize=2,plot=False)
-        plt.title(f'OptoTag')
+        if is_tagged:
+            plt.title(f'OptoTag **')
+        else:
+            plt.title('OptoTag')
         mean_sem = np.mean(psth_opto['data'][0]['sem'])
         mean_val = np.mean(psth_opto['data'][0]['mean'])
         ax5.set_ylabel('sp/s')
@@ -236,6 +240,37 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
 
     # psth_dia_on = neuron.get_psth(df=dia_df[dia_df.cat < dia_df.cat.max()], event='on_sec', conditions='cat',
     #                        colors=cmap)
+
+
+def compute_opto_tag(ts,opto_time):
+    '''
+    Determine if a cell has been optotaggd
+    :param spikes:
+    :param neuron_id:
+    :param opto_time:
+    :return:
+    '''
+    tagged = False
+    first_time = opto_time.iloc[0]-1
+    last_time = opto_time.iloc[-1]+1
+    df = pd.DataFrame()
+
+    neuron = NeuroVis(ts)
+    psth_pre = neuron.get_psth(df=opto_time,event=0,binsize=15,window=[-15,0],plot=False)
+    psth_post = neuron.get_psth(df=opto_time,event=0,binsize=15,window=[0,15],plot=False)
+    raster = neuron.get_raster(df=opto_time,event=0,binsize=1,window=[-20,20],plot=False)
+    raster = raster['data'][0]
+    post_spikes = neuron.get_spikecounts(event=0,df=opto_time,window=[1,10])
+    n_stims = opto_time.shape[0]
+    if n_stims*0.10> np.sum(post_spikes):
+        return(raster,tagged)
+    pre = psth_pre['data'][0]
+    post = psth_post['data'][0]
+    if post['mean'] > (pre['mean']+3*pre['sem']):
+        tagged=True
+    return(raster,tagged)
+
+
 
 
 @click.command()
@@ -290,6 +325,7 @@ def main(ks2_dir,p_save=None):
 
 
 
+    # =============================== #
     # Plot raster summaries
     plot_long_raster(spikes,breaths,epochs)
     plt.savefig(os.path.join(p_save,f'{prefix}_example_raster_long.png'),dpi=150)
@@ -298,7 +334,8 @@ def main(ks2_dir,p_save=None):
     plt.savefig(os.path.join(p_save,f'{prefix}_example_raster_short.png'),dpi=150)
     plt.close('all')
 
-    # Plot single cell summaries
+    # =============================== #
+    # Calculate and plot single cell summaries
     df_sc = pd.DataFrame()
     THETA = []
     L_DIR = []
@@ -306,6 +343,8 @@ def main(ks2_dir,p_save=None):
     MOD_DEPTH = []
     COH=[]
     LAG = []
+    TAGGED = []
+    TAG_RASTER = []
     epochs_time = np.arange(0,1501,300)
     df_phase_tune = pd.DataFrame()
 
@@ -318,17 +357,14 @@ def main(ks2_dir,p_save=None):
         phi_slice = phi
         max_time = aux['t'][-1]
 
+    # Run this first to rank order the coherence
     for cell_id in tqdm(spikes['cell_id'].unique()):
-        # print(cell_id)
-        # f = viz.plot_cell_summary_over_time(spikes,cell_id,epochs_time,breaths,phi,aux['sr'])
-        # f.savefig(os.path.join(p_save,f'summary_cellid{cell_id}.png'),dpi=150)
-        plt.close('all')
 
+         # Get phase tuning
         dum = pd.DataFrame()
-
         btrain = np.zeros_like(phi_slice)
-        spt = spikes[spikes.cell_id==cell_id]['ts']
-        spt = spt[spt<max_time-1]
+        all_spt = spikes[spikes.cell_id==cell_id]['ts']
+        spt = all_spt[all_spt<max_time-1]
         sp_idx = np.round(spt * aux['sr']).astype('int')
         sp_idx = sp_idx[sp_idx<len(btrain)]
         btrain[sp_idx] = 1
@@ -336,12 +372,18 @@ def main(ks2_dir,p_save=None):
             continue
         rr,theta_k,theta,L_dir = proc.angular_response_hist(phi_slice,btrain,nbins=25)
         mod_depth = (np.max(rr)-np.min(rr))/np.mean(rr)
+        LAG.append(theta_k[:-1][np.argmax(rr)])
+        tag_raster,tagged = compute_opto_tag(all_spt,opto_time)
+        TAGGED.append(tagged)
+        TAG_RASTER.append(tag_raster)
 
+    # Get coherence to diaphragm
         n_train = neo.SpikeTrain(spt,t_stop=max_time*pq.s,units=pq.s)
         sig = neo.AnalogSignal(aux['dia'],units='V',sampling_rate=aux['sr']*pq.Hz)
         sfc,freqs = elephant.sta.spike_field_coherence(sig,n_train,nperseg=4096)
         COH.append(np.max(sfc.magnitude))
-        LAG.append(theta_k[:-1][np.argmax(rr)])
+
+        # Get phase tuning over time
         dum[cell_id] = rr
         df_phase_tune = pd.concat([df_phase_tune,dum],axis=1)
 
@@ -349,6 +391,10 @@ def main(ks2_dir,p_save=None):
         L_DIR.append(L_dir)
         MOD_DEPTH.append(mod_depth)
         CELL_ID.append(cell_id)
+
+    TAG_RASTER = np.array(TAG_RASTER)
+
+
     df_phase_tune.index= theta_k[:-1]
     df_sc['theta'] = THETA
     df_sc['l_dir'] = L_DIR
@@ -356,13 +402,17 @@ def main(ks2_dir,p_save=None):
     df_sc['mod_depth'] = MOD_DEPTH
     df_sc['coherence'] = COH
     df_sc['phase_lag'] = LAG
+    df_sc['tagged'] = TAGGED
+
     dd = spikes.groupby(['cell_id']).mean()['depth'].reset_index()
     df_sc = df_sc.merge(dd,how='inner',on='cell_id')
     df_sc.to_csv(os.path.join(p_save,f'{prefix}_phase_tuning_stats.csv'))
     df_phase_tune.to_csv(os.path.join(p_save,f'{prefix}_phase_tuning_curves.csv'))
+    sio.savemat(os.path.join(p_save,f'{prefix}_tag_rasters.mat'),{'t':np.arange(-0.02,0.02,0.001),'raster':TAG_RASTER,'cell_id':CELL_ID})
 
     ordered_mod_depth = df_sc.sort_values('coherence',ascending=False)['cell_id'].values
 
+    # Plot the single cell data
     sc_dir = os.path.join(p_save,'sc_figs')
     try:
         os.makedirs(sc_dir)
@@ -372,8 +422,12 @@ def main(ks2_dir,p_save=None):
     max_time = aux['t'][-1]
     for ii,cell_id in enumerate(ordered_mod_depth):
         print(ii)
-        f = plot_single_cell_summary(spikes[spikes.ts<max_time],cell_id,epochs_time,breaths,phi,aux['sr'],opto_time,aux)
-        f.savefig(os.path.join(sc_dir,f'{prefix}_summary_modrank{ii}_cellid{cell_id}.png'),dpi=150)
+        is_tagged = df_sc.query('cell_id==@cell_id')['tagged'].values
+        f = plot_single_cell_summary(spikes[spikes.ts<max_time],cell_id,epochs_time,breaths,phi,aux['sr'],opto_time,aux,is_tagged)
+        if is_tagged:
+            f.savefig(os.path.join(sc_dir,f'{prefix}_summary_modrank{ii}_cellid{cell_id}_tagged.png'),dpi=150)
+        else:
+            f.savefig(os.path.join(sc_dir,f'{prefix}_summary_modrank{ii}_cellid{cell_id}}.png'),dpi=150)
         plt.close('all')
 
 
