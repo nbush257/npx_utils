@@ -8,15 +8,25 @@
 #PBS -q paidq
 #PBS -e /active/ramirez_j/ramirezlab/nbush/logs
 #PBS -o /active/ramirez_j/ramirezlab/nbush/logs
-#PBS -J 0-18
+#PBS -J 0-27
 
 source activate opioid
 
 f_list=(
-#/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-20/catgt_m2020-20_g0/m2020-20_g0_imec0/imec0_ks3
-#/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-20/catgt_m2020-20_g1_g0/m2020-20_g1_g0_imec0/imec0_ks3
-#/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-20/catgt_m2020-20_g1_g1/m2020-20_g1_g1_imec0/imec0_ks3
-#/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-20/catgt_m2020-20_g1_g2/m2020-20_g1_g2_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-17/catgt_m2020-17_g0/m2020-17_g0_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-18/catgt_m2020-18_g0/m2020-18_g0_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-19/catgt_m2020-19_g1/m2020-19_g1_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-19/catgt_m2020-19_g2/m2020-19_g2_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-19/catgt_m2020-19_g3/m2020-19_g3_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-19/catgt_m2020-19_g4/m2020-19_g4_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-19/catgt_m2020-19_g5/m2020-19_g5_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-19/catgt_m2020-19_g6/m2020-19_g6_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-19/catgt_m2020-19_g7/m2020-19_g7_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-19/catgt_m2020-19_g8/m2020-19_g8_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-20/catgt_m2020-20_g0/m2020-20_g0_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-20/catgt_m2020-20_g1_g0/m2020-20_g1_g0_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-20/catgt_m2020-20_g1_g1/m2020-20_g1_g1_imec0/imec0_ks3
+/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-20/catgt_m2020-20_g1_g2/m2020-20_g1_g2_imec0/imec0_ks3
 /active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-23/catgt_m2020-23_g0/m2020-23_g0_imec0/imec0_ks3
 /active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-23/catgt_m2020-23_g1/m2020-23_g1_imec0/imec0_ks3
 /active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/m2020-23/catgt_m2020-23_g2/m2020-23_g2_imec0/imec0_ks3
