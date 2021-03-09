@@ -381,7 +381,6 @@ def main(ks2_dir,p_save=None):
     dt = datetime.datetime.now()
     date_str = f'{dt.year}-{dt.month:02.0f}-{dt.day:02.0f}'
     if p_save is None:
-        p_save = os.path.join(ks2_dir,'..')
         p_results = f'/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/results/{date_str}_standard_postproc'
         p_sc = f'/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/results/{date_str}_standard_postproc/sc_figs'
     else:
@@ -454,7 +453,7 @@ def main(ks2_dir,p_save=None):
     max_time = 1501
     t0 = 0
     tf = np.where(aux['t'] < max_time)[0][-1]
-    if len(phi) > tf:
+    if len(phi) >= max_time*aux['sr']:
         phi_slice = phi[t0:tf]
     else:
         phi_slice = phi
