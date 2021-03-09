@@ -874,16 +874,16 @@ def get_breaths(breaths,sr,analog):
     return(eup,sigh,apnea,t)
 
 
-def calc_dia_phase(ons,offs,t_start=0,t_stop=None,sr=1/1000):
+def calc_dia_phase(ons,offs=None,t_start=0,t_stop=None,dt=1/1000):
     '''
     Computes breathing phase based on the diaphragm
     Phase is [0,1] where 0 is diaphragm onset, 0.5 is diaphragm offset, and 1 is diaphragm onset again,
      - NB: Technically can generalize to any on/off signal, but standard usage should be diaphragm
     :param ons: timestamps of diaphragm onsets (sec)
-    :param offs: timestamps of diaphragm offsets (sec)
+    :param offs: timestamps of diaphragm offsets (sec). If no offs is given, linearly spaces onsets
     :param t_start: start time of the phase trace (default=0)
     :param t_stop: stop time of the phase trace (default is last stop value)
-    :param sr: sampling rate of the phase trace(set to 1kHz)
+    :param dt: time between timesteps(set to 1kHz)
     :return:
             phi - phase over time
             t_phi - timestamps of the phase vector
@@ -901,20 +901,45 @@ def calc_dia_phase(ons,offs,t_start=0,t_stop=None,sr=1/1000):
 
     assert(len(ons)==len(offs))
 
-    t_phi =np.arange(t_start,t_stop,sr)
+    t_phi =np.arange(t_start,t_stop,dt)
     phi = np.zeros_like(t_phi)
 
     n_breaths = len(ons)
 
-    for ii in range(n_breaths-1):
-        on = ons[ii]
-        off = offs[ii]
-        next_on = ons[ii+1]
-        idx = np.searchsorted(t_phi,[on,off,next_on])
-        phi[idx[0]:idx[1]] = np.linspace(0,0.5,idx[1]-idx[0])
-        phi[idx[1]:idx[2]] = np.linspace(0.5,1,idx[2]-idx[1])
+    if offs is not None:
+        for ii in range(n_breaths-1):
+            on = ons[ii]
+            off = offs[ii]
+            next_on = ons[ii+1]
+            idx = np.searchsorted(t_phi,[on,off,next_on])
+            phi[idx[0]:idx[1]] = np.linspace(0,0.5,idx[1]-idx[0])
+            phi[idx[1]:idx[2]] = np.linspace(0.5,1,idx[2]-idx[1])
+    else:
+        for ii in range(n_breaths-1):
+            on = ons[ii]
+            next_on = ons[ii+1]
+            idx = np.searchsorted(t_phi,[on,next_on])
+            phi[idx[0]:idx[1]] = np.linspace(0,1,idx[1]-idx[0])
+
     return(t_phi,phi)
 
+
+def hist_tuning(x,x_t,st,bins=50):
+    '''
+    Get the normalized tuning curve for a non-angular
+    value
+    :param x: Covariate to tune to
+    :param x_t: the time stamps of x
+    :param st: spike times
+    :param bins: bins for the histogram
+    :return:
+    '''
+    prior,bins = np.histogram(x,bins=bins)
+    idx = np.searchsorted(x_t,st)
+    conditional,bins = np.histogram(x[idx],bins=bins)
+    posterior = conditional/prior
+
+    return(posterior,bins[1:])
 
 
 
