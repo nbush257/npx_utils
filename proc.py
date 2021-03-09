@@ -874,6 +874,48 @@ def get_breaths(breaths,sr,analog):
     return(eup,sigh,apnea,t)
 
 
+def calc_dia_phase(ons,offs,t_start=0,t_stop=None,sr=1/1000):
+    '''
+    Computes breathing phase based on the diaphragm
+    Phase is [0,1] where 0 is diaphragm onset, 0.5 is diaphragm offset, and 1 is diaphragm onset again,
+     - NB: Technically can generalize to any on/off signal, but standard usage should be diaphragm
+    :param ons: timestamps of diaphragm onsets (sec)
+    :param offs: timestamps of diaphragm offsets (sec)
+    :param t_start: start time of the phase trace (default=0)
+    :param t_stop: stop time of the phase trace (default is last stop value)
+    :param sr: sampling rate of the phase trace(set to 1kHz)
+    :return:
+            phi - phase over time
+            t_phi - timestamps of the phase vector
+    '''
+    if t_stop is None:
+        t_stop = offs[-1]
+    if t_stop<t_start:
+        raise ValueError(f'Stop time: {t_stop}s cannot be less than start time: {t_start}s')
+
+    ons = ons[ons>=t_start]
+    ons = ons[ons<t_stop]
+
+    offs = offs[offs>t_start]
+    offs = offs[offs<=t_stop]
+
+    assert(len(ons)==len(offs))
+
+    t_phi =np.arange(t_start,t_stop,sr)
+    phi = np.zeros_like(t_phi)
+
+    n_breaths = len(ons)
+
+    for ii in range(n_breaths-1):
+        on = ons[ii]
+        off = offs[ii]
+        next_on = ons[ii+1]
+        idx = np.searchsorted(t_phi,[on,off,next_on])
+        phi[idx[0]:idx[1]] = np.linspace(0,0.5,idx[1]-idx[0])
+        phi[idx[1]:idx[2]] = np.linspace(0.5,1,idx[2]-idx[1])
+    return(t_phi,phi)
+
+
 
 
 
