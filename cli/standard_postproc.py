@@ -41,6 +41,22 @@ def test():
 
     pass
 
+
+def transform_phase(phi):
+    '''
+    transforms phase from [0,1] to [-pi,pi] such that dia onset is at phi=0,offset is phi=np.pi
+    :param phi:
+    :return: phi_transform
+    '''
+
+    aa = phi+0.5
+    aa[aa>1] = aa[aa>1]-1
+    aa -=.5
+    aa*=np.pi*2
+    return(aa)
+
+
+
 def plot_epochs(breaths,epochs,aux):
     f = plt.figure(figsize=(7,6))
     ax = f.add_subplot(311)
@@ -166,7 +182,8 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
         plt.polar(theta_k, rr * sr, color=cmap[ii])
 
 
-    plt.xticks([0,np.pi/2,np.pi,3*np.pi/2])
+    ax0.set_xticks([0,np.pi/2,np.pi,3*np.pi/2])
+    ax0.set_xticklabels(['I_on','I_off','E2_on','pre-I'],fontsize=6)
 
     plt.suptitle(f'Neuron {neuron_id}; loc:{depth:0.0f}um; Coh.:{np.mean(COH):0.2f}')
 
@@ -213,12 +230,17 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     ax4.set_ylim(ax3.get_ylim())
     ax4.set_xlabel('Freq. (Hz)')
 
-    ax7 = f.add_subplot(gs[2,:2],sharey=ax1)
+    ax7 = f.add_subplot(gs[2,:2])
     psth_dia_off = neuron.get_psth(df=dia_df.query('type!="apnea"'), event='on_sec', colors= cm.Dark2([2,3]),conditions='type',window=[-500,1000],binsize=50)
     plt.title(f'Eup/sigh')
     legend_vals = ['Dia On','eupnea','sigh']
     leg = plt.legend(legend_vals)
     plt.legend(legend_vals,bbox_to_anchor=(1.2,0.5),loc='center right',fontsize=6)
+    maxy = max([ax1.get_ylim()[1],ax2.get_ylim()[1],ax7.get_ylim()[1]])
+    ax1.set_ylim([0,maxy])
+    ax2.set_ylim([0,maxy])
+    ax7.set_ylim([0,maxy])
+    ax7.axvline(0,color='k',ls='--')
 
     if opto_times is not None:
         ax5 = f.add_subplot(gs[-1,:2])
@@ -286,7 +308,7 @@ def compute_opto_tag(ts,opto_time):
     return(raster,tagged)
 
 
-def plot_mean_breaths(spikes,breaths,max_time,p_save,prefix):
+def plot_mean_breaths(spikes,breaths,max_time,p_save,prefix,coherence,coh_thresh=0.2):
     def mean_tensor(TT,raster):
         mean_breath = np.mean(TT, 2)
         mean_breath = (mean_breath - np.mean(raster, 1)) / np.std(raster, 1)
@@ -300,7 +322,7 @@ def plot_mean_breaths(spikes,breaths,max_time,p_save,prefix):
         if scl is None:
             scl = np.max(np.abs(mean_dat))
 
-        plt.pcolormesh(raster_bins, np.arange(len(order)), mean_dat.T[order, :], cmap='RdBu_r', vmin=-scl, vmax=scl)
+        cc = plt.pcolormesh(raster_bins, np.arange(len(order)), mean_dat.T[order, :], cmap='RdBu_r', vmin=-scl, vmax=scl)
         plt.axvline(0, ls=':', color='k')
         plt.axvline(burst_dur, ls=':', color='g')
         plt.text(0, mean_dat.shape[1] - 1, 'Burst', ha='left', va='top', fontsize=8)
@@ -311,23 +333,24 @@ def plot_mean_breaths(spikes,breaths,max_time,p_save,prefix):
 
         plt.sca(ax[1])
         breath_ordered = mean_dat[:, order]
-        if good_neurons is None:
-            good_neurons = np.where(np.max(np.abs(breath_ordered), 0) > 0.1)[0]
+        coherence_ordered = np.array(coherence)[order]
+        good_neurons = coherence_ordered>coh_thresh
         breath_ordered = breath_ordered[:, good_neurons]
-        cc = plt.pcolormesh(raster_bins, np.arange(breath_ordered.shape[1]), breath_ordered.T, cmap='RdBu_r', vmin=-scl,
-                            vmax=scl)
-        plt.axvline(0, ls=':', color='k')
-        plt.axvline(burst_dur, ls=':', color='g')
-        plt.text(0, breath_ordered.shape[1] - 1, 'Burst', ha='left', va='top', fontsize=8)
-        plt.xlabel('time [s]')
-        plt.title('Z-scored >0.1')
+        if np.sum(good_neurons)>0:
+            cc = plt.pcolormesh(raster_bins, np.arange(breath_ordered.shape[1]), breath_ordered.T, cmap='RdBu_r', vmin=-scl,
+                                vmax=scl)
+            plt.axvline(0, ls=':', color='k')
+            plt.axvline(burst_dur, ls=':', color='g')
+            plt.text(0, breath_ordered.shape[1] - 1, 'Burst', ha='left', va='top', fontsize=8)
+            plt.xlabel('time [s]')
+            plt.title(f'Coh > {coh_thresh:0.1f}')
 
         f.subplots_adjust(right=0.8)
         f.colorbar(cc, cax=cbar_ax)
         sns.despine()
         return(good_neurons)
 
-    raster,cell_id,bins = proc.bin_trains(spikes.ts,spikes.cell_id,max_time=max_time,binsize=.005)
+    raster,cell_id,bins = proc.bin_trains(spikes.ts,spikes.cell_id,max_time=max_time,binsize=.015)
     burst_dur = breaths['duration_sec'].mean()
     pbi_dur = breaths['postBI'].mean()
 
@@ -339,10 +362,8 @@ def plot_mean_breaths(spikes,breaths,max_time,p_save,prefix):
     # mean_ap = mean_tensor(TT_ap,raster)
     # mean_sigh = mean_tensor(TT_sigh,raster)
 
-
     order = np.argsort(np.nanargmax(mean_eup,0))
     scl = np.max(np.abs(mean_eup))
-
     good_neurons = do_plot(mean_eup,scl)
     # do_plot(mean_ap,scl,good_neurons)
     # do_plot(mean_sigh,scl=None,good_neurons = good_neurons)
@@ -352,9 +373,11 @@ def plot_mean_breaths(spikes,breaths,max_time,p_save,prefix):
 
 
 
+
 @click.command()
 @click.argument('ks2_dir')
-def main(ks2_dir,p_save=None):
+@click.option('--t_max',default=1501)
+def main(ks2_dir,t_max,p_save=None):
     run_tensor=True
 
     # (DONE) Plot long time-scale raster of all neurons with respiratory rate
@@ -405,18 +428,26 @@ def main(ks2_dir,p_save=None):
 
     plt.style.use('seaborn-paper')
     epochs,breaths,aux = data.load_aux(ks2_dir)
+    t_max = np.min([aux['t'][-1],t_max])
+    print(f'Max time is: {t_max:0.1f}s or {t_max/60:0.0f}m')
     breaths = proc.compute_breath_type(breaths) # classify sighs, apneas
     spikes = data.load_filtered_spikes(ks2_dir)[0]
-
-    phi = proc.calc_phase(aux['pleth'])
-    dum = breaths['inhale_onsets'].dropna()*aux['sr']
-    dum = dum.values.astype('int')
-    phi = proc.shift_phi(phi,dum)
-    opto_fn = glob.glob(os.path.join(ks2_dir,'../../*XD_8_0_10.adj.txt'))[0]
+    phi = proc.calc_dia_phase(breaths['on_sec'].values,breaths['off_sec'].values,dt=1/aux['sr'])[1]
+    phi = transform_phase(phi)
     try:
+        opto_fn = glob.glob(os.path.join(ks2_dir,'../../*XD_8_0_10.adj.txt'))[0]
         opto_time = pd.read_csv(opto_fn,header=None)
     except:
-        opto_time=None
+        try:
+            opto_fn = glob.glob(os.path.join(ks2_dir,'../../*XD_8_0_10.txt'))[0]
+            opto_time = pd.read_csv(opto_fn, header=None)
+        except:
+            try:
+                opto_fn = glob.glob(os.path.join(ks2_dir,'../../*XD_8_0_0*.txt'))[0]
+                opto_time = pd.read_csv(opto_fn, header=None)
+            except:
+                opto_fn = None
+                opto_time = None
 
 
 
@@ -432,8 +463,7 @@ def main(ks2_dir,p_save=None):
 
     # =============================== #
     # Compute the sighs and apneas, then plot mean breaths
-    max_time = aux['t'][-1]
-    plot_mean_breaths(spikes,breaths,max_time,p_results,prefix)
+    max_time = t_max
 
 
     # =============================== #
@@ -447,10 +477,10 @@ def main(ks2_dir,p_save=None):
     LAG = []
     TAGGED = []
     TAG_RASTER = []
-    epochs_time = np.arange(0,1501,300)
+    epochs_time = np.arange(0,t_max+1,300)
+    epochs_time = np.concatenate([epochs_time,[t_max]])
     df_phase_tune = pd.DataFrame()
 
-    max_time = 1501
     t0 = 0
     tf = np.where(aux['t'] < max_time)[0][-1]
     if len(phi) >= max_time*aux['sr']:
@@ -486,7 +516,8 @@ def main(ks2_dir,p_save=None):
         COH.append(np.max(sfc.magnitude))
 
         # Get phase tuning over time
-        dum[cell_id] = rr
+        nid = prefix+f'_c{cell_id:03.0f}'
+        dum[nid] = rr
         df_phase_tune = pd.concat([df_phase_tune,dum],axis=1)
 
         THETA.append(theta)
@@ -496,6 +527,10 @@ def main(ks2_dir,p_save=None):
 
     TAG_RASTER = np.array(TAG_RASTER)
 
+    # get the coherences in order to threshold the mean breath plot
+    coh_idx = np.zeros(spikes['cell_id'].nunique())
+    coh_idx[np.array(CELL_ID)] = np.array(COH)
+    plot_mean_breaths(spikes,breaths,max_time,p_results,prefix,coh_idx,coh_thresh=0.4)
 
     df_phase_tune.index= theta_k[:-1]
     df_sc['theta'] = THETA
@@ -508,6 +543,10 @@ def main(ks2_dir,p_save=None):
 
     dd = spikes.groupby(['cell_id']).mean()['depth'].reset_index()
     df_sc = df_sc.merge(dd,how='inner',on='cell_id')
+    df_sc['mouse_id'] = mouse_id
+    df_sc['gate_id'] = gate_id
+    df_sc['probe_id'] = probe_id
+    df_sc['uid'] = prefix
     df_sc.to_csv(os.path.join(p_results,f'{prefix}_phase_tuning_stats.csv'))
     df_phase_tune.to_csv(os.path.join(p_results,f'{prefix}_phase_tuning_curves.csv'))
     sio.savemat(os.path.join(p_results,f'{prefix}_tag_rasters.mat'),{'t':np.arange(-0.02,0.02,0.001),'raster':TAG_RASTER,'cell_id':CELL_ID})
@@ -515,7 +554,6 @@ def main(ks2_dir,p_save=None):
     ordered_mod_depth = df_sc.sort_values('coherence',ascending=False)['cell_id'].values
 
     # Plot the single cell data
-    max_time = aux['t'][-1]
     for ii,cell_id in enumerate(ordered_mod_depth):
         print(ii)
         is_tagged = df_sc.query('cell_id==@cell_id')['tagged'].values
@@ -546,9 +584,12 @@ def main(ks2_dir,p_save=None):
 
         # plot tensor decomp
         factors = mdl.factors.factors
-        viz.plot_tensortools_factors(mdl,raster_bins,dd)
-        plt.savefig(os.path.join(p_results,f'{prefix}_tensor_factors.png'),dpi=150)
-        plt.close('all')
+        try:
+            viz.plot_tensortools_factors(mdl,raster_bins,dd)
+            plt.savefig(os.path.join(p_results,f'{prefix}_tensor_factors.png'),dpi=150)
+            plt.close('all')
+        except:
+            pass
 
         with open(os.path.join(p_results,f'{prefix}tensor_decomp.pkl'),'wb') as fid:
             pickle.dump(factors,fid)
@@ -573,11 +614,14 @@ def main(ks2_dir,p_save=None):
         np.save(os.path.join(p_results,f'{prefix}_warped_tensor.npy'),warped)
         warped = np.transpose(warped,[1,2,0])
         warp_decomp,axs = models.get_best_TCA(warped,max_rank=12,plot_tgl=True)
-        f = viz.plot_tensortools_factors(warp_decomp,raster_bins,dd)
+        try:
+            f = viz.plot_tensortools_factors(warp_decomp,raster_bins,dd)
 
-        # Save
-        plt.savefig(os.path.join(p_results,f'{prefix}_tensor_factors_warped.png'),dpi=150)
-        plt.close('all')
+            # Save
+            plt.savefig(os.path.join(p_results,f'{prefix}_tensor_factors_warped.png'),dpi=150)
+            plt.close('all')
+        except:
+            pass
 
         with open(os.path.join(p_results,f'{prefix}_tensor_decomp_warped.pkl'),'wb') as fid:
             pickle.dump(factors,fid)
