@@ -950,6 +950,40 @@ def hist_tuning(x,x_t,st,bins=50):
     return(posterior,bins[1:])
 
 
+def get_sta(x,tvec,ts,win=0.5):
+    '''
+    Compute the spike triggered average, std, sem of a covariate x
+    :param x: The analog signal to check against
+    :param tvec: the time vector for x
+    :param ts: the timestamps (in seconds) of the cell to get the sta for
+    :param win: the window (symmetric about the spike) to average
+    :return:
+    '''
+    assert(len(tvec)==len(x))
+
+    dt = tvec[1]-tvec[0]
+    samps = np.searchsorted(tvec,ts)
+    win_samps = int(win/dt)
+    spike_triggered = np.zeros([win_samps*2,len(samps)])
+    for ii,samp in enumerate(samps):
+        if (samp-win_samps)<0:
+            continue
+        if (samp+win_samps)>len(x):
+            continue
+        spike_triggered[:,ii] = x[samp-win_samps:samp+win_samps]
+
+    st_average = np.nanmean(spike_triggered,1)
+    st_sem = np.nanstd(spike_triggered,1)/np.sqrt(len(samps))
+    st_std = np.nanstd(spike_triggered,1)
+    win_t = np.linspace(-win,win,win_samps*2)
+    sta = {'mean':st_average,
+           'sem':st_sem,
+           'std':st_std,
+           't':win_t}
+
+    return(sta)
+
+
 
 
 
