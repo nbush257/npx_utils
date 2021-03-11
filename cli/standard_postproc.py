@@ -125,6 +125,23 @@ def plot_long_raster(spikes,breaths,epochs):
     ax2.set_ylabel('Freq. (Hz)')
     plt.tight_layout()
 
+def mean_dia(aux,breaths,pre,post,key='on_sec'):
+    pre_samp = int(aux['sr']*(pre/1000))
+    post_samp = int(aux['sr']*(post/1000))
+    mm = np.empty([pre_samp+post_samp,breaths.shape[0]])*np.nan
+    for ii,on in enumerate(breaths[key]):
+        on_samp = int(aux['sr']*on)
+        if (on_samp-pre_samp)<0:
+            continue
+        if (on_samp+post_samp)>len(aux['dia']):
+            continue
+        mm[:,ii] = aux['dia'][on_samp-pre_samp:on_samp+post_samp]
+    win_t = np.linspace(-pre,post,mm.shape[0])
+    mm = np.nanmean(mm,1)
+    mm -=np.min(mm)
+    return(win_t,mm)
+
+
 
 def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_times,aux,is_tagged,stim_len):
     '''
@@ -148,6 +165,8 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     cat = proc.events_in_epochs(dia_df['on_sec'], epoch_t)
     dia_df['cat'] = cat
     neuron = NeuroVis(ts)
+    t_dia_on,mean_on_dia = mean_dia(aux,dia_df,250,500)
+    t_dia_off,mean_off_dia = mean_dia(aux,dia_df,250,500,'off_sec')
 
     # Start plotting
     f = plt.figure(figsize=(9,8))
@@ -161,7 +180,7 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
 
     sig = neo.AnalogSignal(aux['dia'], units='V', sampling_rate=aux['sr'] * pq.Hz)
     n_train = neo.SpikeTrain(ts[ts<epoch_t[-1]], t_stop=epoch_t[-1] * pq.s, units=pq.s)
-    sfc, freqs = elephant.sta.spike_field_coherence(sig, n_train, nperseg=4096)
+    sfc, freqs = elephant.sta.spike_field_coherence(sig, n_train, nperseg=8192)
     COH = np.max(sfc.magnitude)
 
     for ii, (t0, tf) in enumerate(zip(epochs_t0, epochs_tf)):
@@ -177,10 +196,10 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
         sp_idx = np.round(spt * sr).astype('int')-1
         sp_idx = sp_idx[sp_idx<btrain.shape[0]]
         btrain[sp_idx] = 1
-        rr, theta_k, theta, L_dir = proc.angular_response_hist(phi_slice, btrain, 25)
+        rr, theta_k, theta, L_dir = proc.angular_response_hist(phi_slice, btrain, 100)
+        theta_k = theta_k[:-1]+np.diff(theta_k)[0]
         kl = proc.compute_KL(phi_slice,btrain,25)
         KL.append(kl)
-        rr = np.hstack([rr,rr[0]])
         plt.polar(theta_k, rr * sr, color=cmap[ii])
 
 
@@ -244,6 +263,13 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     ax2.set_ylim([0,maxy])
     ax7.set_ylim([0,maxy])
     ax7.axvline(0,color='k',ls='--')
+
+    # Add the mean dia
+    axt = ax1.twinx()
+    axt.fill_between(t_dia_on,mean_on_dia,alpha=0.2)
+
+    axt = ax2.twinx()
+    axt.fill_between(t_dia_off,mean_off_dia,alpha=0.2)
 
     if opto_times is not None:
         ax5 = f.add_subplot(gs[-1,:2])
@@ -526,9 +552,10 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
         btrain[sp_idx] = 1
         if sum(btrain)<1000:
             continue
-        rr,theta_k,theta,L_dir = proc.angular_response_hist(phi_slice,btrain,nbins=25)
+        rr,theta_k,theta,L_dir = proc.angular_response_hist(phi_slice,btrain,nbins=100)
+        theta_k = theta_k[:-1]+np.diff(theta_k)[0]
         mod_depth = (np.max(rr)-np.min(rr))/np.mean(rr)
-        LAG.append(theta_k[:-1][np.argmax(rr)])
+        LAG.append(theta_k[np.argmax(rr)])
         if opto_time is not None:
             tag_raster,tagged = compute_opto_tag(all_spt,opto_time,stim_len)
         else:
@@ -540,7 +567,7 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
     # Get coherence to diaphragm
         n_train = neo.SpikeTrain(spt,t_stop=max_time*pq.s,units=pq.s)
         sig = neo.AnalogSignal(aux['dia'],units='V',sampling_rate=aux['sr']*pq.Hz)
-        sfc,freqs = elephant.sta.spike_field_coherence(sig,n_train,nperseg=4096)
+        sfc,freqs = elephant.sta.spike_field_coherence(sig,n_train,nperseg=8192)
         COH.append(np.max(sfc.magnitude))
 
         # Get phase tuning over time
@@ -560,7 +587,7 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
     coh_idx[np.array(CELL_ID)] = np.array(COH)
     plot_mean_breaths(spikes,breaths,max_time,p_results,prefix,coh_idx,coh_thresh=0.15)
 
-    df_phase_tune.index= theta_k[:-1]
+    df_phase_tune.index= theta_k
     df_sc['theta'] = THETA
     df_sc['l_dir'] = L_DIR
     df_sc['cell_id'] = CELL_ID
