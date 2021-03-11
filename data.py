@@ -345,8 +345,9 @@ def load_aux(ks_dir,t=0):
     else:
         epochs = pd.read_csv(glob.glob(aux_dir+'*epochs*.csv')[t])
         breaths = pd.read_csv(glob.glob(aux_dir+'*pleth*.csv')[t],index_col=0)
-        aux_dat = sio.loadmat(glob.glob(aux_dir+ '*.mat')[t])
+        aux_dat = sio.loadmat(glob.glob(aux_dir+ '*aux*.mat')[t])
 
+    breaths = breaths[breaths['duration_sec'] < 1]
     aux_t = aux_dat['t'].ravel()
     dia = aux_dat['dia'].ravel()
     pleth = aux_dat['pleth'].ravel()

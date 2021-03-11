@@ -14,6 +14,7 @@ from affinewarp import PiecewiseWarping
 import sys
 import glob
 from tqdm import tqdm
+from tqdm.contrib import tenumerate
 import re
 import elephant
 import neo
@@ -109,7 +110,7 @@ def plot_long_raster(spikes,breaths,epochs):
     ax1.pcolormesh(bins,cell_id,raster,cmap='Greys')
     ax2 = f.add_subplot(gs[-2:-1,0],sharex=ax1)
     ax2.plot(breaths['on_sec'],1/breaths['postBI'],'k.',alpha=0.05)
-    ax2.set_ylim(0,np.percentile(1/breaths['postBI'].dropna(),99.9))
+    ax2.set_ylim(0,10)
 
     ymax = np.max(cell_id)
     for ii,v in epochs.iterrows():
@@ -125,7 +126,7 @@ def plot_long_raster(spikes,breaths,epochs):
     plt.tight_layout()
 
 
-def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_times,aux,is_tagged):
+def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_times,aux,is_tagged,stim_len):
     '''
     assumes continuous epochs
     :param spikes:
@@ -174,6 +175,7 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
 
         spt = sub_spikes - t0
         sp_idx = np.round(spt * sr).astype('int')-1
+        sp_idx = sp_idx[sp_idx<btrain.shape[0]]
         btrain[sp_idx] = 1
         rr, theta_k, theta, L_dir = proc.angular_response_hist(phi_slice, btrain, 25)
         kl = proc.compute_KL(phi_slice,btrain,25)
@@ -183,7 +185,7 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
 
 
     ax0.set_xticks([0,np.pi/2,np.pi,3*np.pi/2])
-    ax0.set_xticklabels(['I_on','I_off','E2_on','pre-I'],fontsize=6)
+    ax0.set_xticklabels(['I_on','','I_off','pre-I'],fontsize=6)
 
     plt.suptitle(f'Neuron {neuron_id}; loc:{depth:0.0f}um; Coh.:{np.mean(COH):0.2f}')
 
@@ -228,6 +230,7 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     ax4.plot(1/dia_df['postBI'],dia_df['on_sec']/60,'.',color='tab:red',alpha=0.3)
     ax4.hlines(dia_df.query('type=="sigh"')['on_sec']/60,ax4.get_xlim()[0],ax4.get_xlim()[1],color=cm.Dark2([3]),linestyles='--',lw=0.5)
     ax4.set_ylim(ax3.get_ylim())
+    ax4.set_xlim(0,10)
     ax4.set_xlabel('Freq. (Hz)')
 
     ax7 = f.add_subplot(gs[2,:2])
@@ -244,8 +247,8 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
 
     if opto_times is not None:
         ax5 = f.add_subplot(gs[-1,:2])
-        psth_opto = neuron.get_psth(df=opto_times,event=0,colors=cmap,window=[-20,20],binsize=2)
-        raster_sc = neuron.get_raster(df=opto_times,event=0,window=[-20,20],binsize=2,plot=False)
+        psth_opto = neuron.get_psth(df=opto_times,event=0,colors=cmap,window=[-stim_len*2,stim_len*2],binsize=2)
+        raster_sc = neuron.get_raster(df=opto_times,event=0,window=[-stim_len*2,stim_len*2],binsize=2,plot=False)
         if is_tagged:
             plt.title(f'OptoTag **')
         else:
@@ -258,7 +261,7 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
             yymax = mean_sem*5+mean_val
         ax5.set_ylim(0,yymax)
         ax5.get_legend().remove()
-        ax5.axvspan(0,10,color='c',alpha=0.4)
+        ax5.axvspan(0,stim_len,color='c',alpha=0.4)
 
         ax6 = ax5.twinx()
         bb = np.arange(raster_sc['window'][0],raster_sc['window'][1],raster_sc['binsize'])
@@ -279,7 +282,7 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     #                        colors=cmap)
 
 
-def compute_opto_tag(ts,opto_time):
+def compute_opto_tag(ts,opto_time,stim_len):
     '''
     Determine if a cell has been optotaggd
     :param spikes:
@@ -293,11 +296,11 @@ def compute_opto_tag(ts,opto_time):
     df = pd.DataFrame()
 
     neuron = NeuroVis(ts)
-    psth_pre = neuron.get_psth(df=opto_time,event=0,binsize=15,window=[-15,0],plot=False)
-    psth_post = neuron.get_psth(df=opto_time,event=0,binsize=15,window=[0,15],plot=False)
-    raster = neuron.get_raster(df=opto_time,event=0,binsize=1,window=[-20,20],plot=False)
+    psth_pre = neuron.get_psth(df=opto_time,event=0,binsize=stim_len,window=[-stim_len,0],plot=False)
+    psth_post = neuron.get_psth(df=opto_time,event=0,binsize=stim_len,window=[0,stim_len],plot=False)
+    raster = neuron.get_raster(df=opto_time,event=0,binsize=1,window=[-stim_len*2,stim_len*2],plot=False)
     raster = raster['data'][0]
-    post_spikes = neuron.get_spikecounts(event=0,df=opto_time,window=[1,10])
+    post_spikes = neuron.get_spikecounts(event=0,df=opto_time,window=[1,stim_len])
     n_stims = opto_time.shape[0]
     if n_stims*0.10> np.sum(post_spikes):
         return(raster,tagged)
@@ -372,12 +375,41 @@ def plot_mean_breaths(spikes,breaths,max_time,p_save,prefix,coherence,coh_thresh
     plt.savefig(os.path.join(p_save,f'{prefix}_mean_breath.png'),dpi=300)
 
 
+def get_opto_data(ks2_dir,stim_len):
+    '''
+    sequentially tries to get the opto data
+    :param ks2_dir:
+    :param stim_len:
+    :return:
+    '''
+    try:
+        opto_fn = glob.glob(os.path.join(ks2_dir, f'../../*XD_8_0_{stim_len}.txt'))[0]
+        opto_time = pd.read_csv(opto_fn,header=None)
+    except:
+        try:
+            opto_fn = glob.glob(os.path.join(ks2_dir, '../../*XD_8_0_10.adj.txt'))[0]
+            opto_time = pd.read_csv(opto_fn, header=None)
+            stim_len = 10
+        except:
+            try:
+                opto_fn = glob.glob(os.path.join(ks2_dir, '../../*XD_8_0_10.txt'))[0]
+                opto_time = pd.read_csv(opto_fn, header=None)
+                stim_len = 10
+            except:
+                opto_fn = None
+                opto_time = None
+    if opto_fn is not None:
+        print(f'Opto tag data found in: {os.path.split(opto_fn)[-1]}')
+    else:
+        print('No optotag data found')
+    return(opto_time,opto_fn,stim_len)
 
 
 @click.command()
 @click.argument('ks2_dir')
 @click.option('--t_max',default=1501)
-def main(ks2_dir,t_max,p_save=None):
+@click.option('--stim_len',default=10)
+def main(ks2_dir,t_max,stim_len,p_save=None):
     run_tensor=True
 
     # (DONE) Plot long time-scale raster of all neurons with respiratory rate
@@ -424,30 +456,18 @@ def main(ks2_dir,t_max,p_save=None):
     gate_id = int(re.search('_g\d_',ks2_dir).group()[2])
     probe_id = int(re.search('imec\d',ks2_dir).group()[-1])
     prefix = f'{mouse_id}_g{gate_id}_imec{probe_id}'
+    print('='*100)
     print(f'run identifier is: {prefix}')
 
     plt.style.use('seaborn-paper')
     epochs,breaths,aux = data.load_aux(ks2_dir)
-    t_max = np.min([aux['t'][-1],t_max])
-    print(f'Max time is: {t_max:0.1f}s or {t_max/60:0.0f}m')
+    max_time = np.min([aux['t'][-1],t_max])
+    print(f'Max time is: {max_time:0.1f}s or {max_time/60:0.0f}m')
     breaths = proc.compute_breath_type(breaths) # classify sighs, apneas
     spikes = data.load_filtered_spikes(ks2_dir)[0]
-    phi = proc.calc_dia_phase(breaths['on_sec'].values,breaths['off_sec'].values,dt=1/aux['sr'])[1]
+    phi = proc.calc_dia_phase(breaths['on_sec'].values,breaths['off_sec'].values,dt=1/aux['sr'],t_stop=max_time)[1]
     phi = transform_phase(phi)
-    try:
-        opto_fn = glob.glob(os.path.join(ks2_dir,'../../*XD_8_0_10.adj.txt'))[0]
-        opto_time = pd.read_csv(opto_fn,header=None)
-    except:
-        try:
-            opto_fn = glob.glob(os.path.join(ks2_dir,'../../*XD_8_0_10.txt'))[0]
-            opto_time = pd.read_csv(opto_fn, header=None)
-        except:
-            try:
-                opto_fn = glob.glob(os.path.join(ks2_dir,'../../*XD_8_0_0*.txt'))[0]
-                opto_time = pd.read_csv(opto_fn, header=None)
-            except:
-                opto_fn = None
-                opto_time = None
+    opto_time,opto_fn,stim_len = get_opto_data(ks2_dir,stim_len)
 
 
 
@@ -457,13 +477,14 @@ def main(ks2_dir,t_max,p_save=None):
     plot_long_raster(spikes,breaths,epochs)
     plt.savefig(os.path.join(p_results,f'{prefix}_example_raster_long.png'),dpi=150)
     plt.close('all')
-    viz.plot_raster_example(spikes,aux['sr'],aux['pleth'],aux['dia'],500,5)
+    if max_time<105:
+        raster_plot_start = max_time-25
+    else:
+        raster_plot_start = 100
+    viz.plot_raster_example(spikes,aux['sr'],aux['pleth'],aux['dia'],raster_plot_start,5)
     plt.savefig(os.path.join(p_results,f'{prefix}_example_raster_short.png'),dpi=150)
     plt.close('all')
 
-    # =============================== #
-    # Compute the sighs and apneas, then plot mean breaths
-    max_time = t_max
 
 
     # =============================== #
@@ -477,8 +498,10 @@ def main(ks2_dir,t_max,p_save=None):
     LAG = []
     TAGGED = []
     TAG_RASTER = []
-    epochs_time = np.arange(0,t_max+1,300)
-    epochs_time = np.concatenate([epochs_time,[t_max]])
+    epochs_time = np.arange(0,max_time+1,300)
+    if len(epochs_time)==1:
+        epochs_time = np.concatenate([epochs_time,[max_time]])
+
     df_phase_tune = pd.DataFrame()
 
     t0 = 0
@@ -490,6 +513,7 @@ def main(ks2_dir,t_max,p_save=None):
         max_time = aux['t'][-1]
 
     # Run this first to rank order the coherence
+    print('Computing single cell characteristics...')
     for cell_id in tqdm(spikes['cell_id'].unique()):
 
          # Get phase tuning
@@ -505,7 +529,11 @@ def main(ks2_dir,t_max,p_save=None):
         rr,theta_k,theta,L_dir = proc.angular_response_hist(phi_slice,btrain,nbins=25)
         mod_depth = (np.max(rr)-np.min(rr))/np.mean(rr)
         LAG.append(theta_k[:-1][np.argmax(rr)])
-        tag_raster,tagged = compute_opto_tag(all_spt,opto_time)
+        if opto_time is not None:
+            tag_raster,tagged = compute_opto_tag(all_spt,opto_time,stim_len)
+        else:
+            tagged = False
+            tag_raster = []
         TAGGED.append(tagged)
         TAG_RASTER.append(tag_raster)
 
@@ -530,7 +558,7 @@ def main(ks2_dir,t_max,p_save=None):
     # get the coherences in order to threshold the mean breath plot
     coh_idx = np.zeros(spikes['cell_id'].nunique())
     coh_idx[np.array(CELL_ID)] = np.array(COH)
-    plot_mean_breaths(spikes,breaths,max_time,p_results,prefix,coh_idx,coh_thresh=0.4)
+    plot_mean_breaths(spikes,breaths,max_time,p_results,prefix,coh_idx,coh_thresh=0.15)
 
     df_phase_tune.index= theta_k[:-1]
     df_sc['theta'] = THETA
@@ -554,14 +582,14 @@ def main(ks2_dir,t_max,p_save=None):
     ordered_mod_depth = df_sc.sort_values('coherence',ascending=False)['cell_id'].values
 
     # Plot the single cell data
-    for ii,cell_id in enumerate(ordered_mod_depth):
-        print(ii)
+    print('Plotting single cell summaries...')
+    for ii,cell_id in tenumerate(ordered_mod_depth):
         is_tagged = df_sc.query('cell_id==@cell_id')['tagged'].values
-        f = plot_single_cell_summary(spikes[spikes.ts<max_time],cell_id,epochs_time,breaths,phi,aux['sr'],opto_time,aux,is_tagged)
+        f = plot_single_cell_summary(spikes[spikes.ts<aux['t'][-1]],cell_id,epochs_time,breaths,phi,aux['sr'],opto_time,aux,is_tagged,stim_len)
         if is_tagged:
-            f.savefig(os.path.join(p_sc,f'{prefix}_summary_modrank{ii}_cellid{cell_id}_tagged.png'),dpi=150)
+            f.savefig(os.path.join(p_sc,f'{prefix}_summary_modrank{ii[0]:03.0f}_cellid{cell_id}_tagged.png'),dpi=150)
         else:
-            f.savefig(os.path.join(p_sc,f'{prefix}_summary_modrank{ii}_cellid{cell_id}.png'),dpi=150)
+            f.savefig(os.path.join(p_sc,f'{prefix}_summary_modrank{ii[0]:03.0f}_cellid{cell_id}.png'),dpi=150)
         plt.close('all')
 
 
@@ -625,6 +653,7 @@ def main(ks2_dir,t_max,p_save=None):
 
         with open(os.path.join(p_results,f'{prefix}_tensor_decomp_warped.pkl'),'wb') as fid:
             pickle.dump(factors,fid)
+    print('Analysis succesful')
 
 
 if __name__=='__main__':

@@ -893,13 +893,15 @@ def calc_dia_phase(ons,offs=None,t_start=0,t_stop=None,dt=1/1000):
     if t_stop<t_start:
         raise ValueError(f'Stop time: {t_stop}s cannot be less than start time: {t_start}s')
 
-    ons = ons[ons>=t_start]
-    ons = ons[ons<t_stop]
-
     offs = offs[offs>t_start]
     offs = offs[offs<=t_stop]
 
+    ons = ons[ons>=t_start]
+    ons = ons[:len(offs)]
+
+
     assert(len(ons)==len(offs))
+    assert(np.all(np.greater(offs,ons)))
 
     t_phi =np.arange(t_start,t_stop,dt)
     phi = np.zeros_like(t_phi)
@@ -913,7 +915,13 @@ def calc_dia_phase(ons,offs=None,t_start=0,t_stop=None,dt=1/1000):
             next_on = ons[ii+1]
             idx = np.searchsorted(t_phi,[on,off,next_on])
             phi[idx[0]:idx[1]] = np.linspace(0,0.5,idx[1]-idx[0])
-            phi[idx[1]:idx[2]] = np.linspace(0.5,1,idx[2]-idx[1])
+            try:
+                phi[idx[1]:idx[2]] = np.linspace(0.5,1,idx[2]-idx[1])
+            except:
+                print([on,off,next_on])
+                print(idx)
+                print(ii)
+
     else:
         for ii in range(n_breaths-1):
             on = ons[ii]
