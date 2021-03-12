@@ -22,15 +22,61 @@ import readSGLX
 import numpy as np
 import scipy.signal as sig
 import scipy.io.matlab as sio
-import ephys.signal as esig
-import glob
-import pandas as pd
-import data
 import proc
-from ephys.signal import remove_EKG
-from statsmodels.nonparametric.smoothers_lowess import lowess
 from pathlib import Path
 import click
+from sklearn.mixture import BayesianGaussianMixture
+from scipy.ndimage.filters import median_filter
+
+
+def remove_EKG(x,sr,,thresh=5):
+    '''
+    :param x: diaphragm (or other) emg
+    :param sr: sample rate
+    :return: y ekg filtered out
+    '''
+    sos = sig.butter(2,[5/sr/2,500/sr/2],btype='bandpass',output='sos')
+    xs = sig.sosfilt(sos,x)
+    pks = sig.find_peaks(xs,prominence=thresh*np.std(xs),distance=0.05*sr)[0]
+    amps = xs[pks]
+    win = int(0.010 *sr)
+    y = x.copy()
+    ekg = np.zeros([2*win,len(pks)])
+    for ii,pk in enumerate(pks):
+        try:
+            ekg[:,ii] = x[pk-win:pk+win]
+        except:
+            pass
+
+    ekg_std = np.std(ekg[:30],0) +np.std(ekg[-30:],0)
+    ekg_std = np.log(ekg_std)
+    bgm = BayesianGaussianMixture(2)
+    cls = bgm.fit_predict(ekg_std[:,np.newaxis])
+    cls[cls==0]=-1
+    m0 = np.nanmean(ekg_std[cls==-1])
+    m1 = np.nanmean(ekg_std[cls==1])
+    if m0>m1:
+        cls = -cls
+
+    ww = int(.0005 * sr)
+    ww += ww % 2 - 1
+    for ii,pk in enumerate(pks):
+        if pk-win<0:
+            continue
+        if (pk+win)>len(y):
+            continue
+        if cls[ii]==-1:
+            sm_ekg = sig.savgol_filter(ekg[:,ii],ww,1)
+            y[pk - win:pk + win] -= sm_ekg
+        else:
+            med_ekg = np.nanmedian(ekg[:,ii-5:ii+5],1)
+            med_amp = np.median(amps[ii-5:ii+5])
+            scl = amps[ii]/med_amp
+            y[pk - win:pk + win] -=med_ekg*scl
+
+    y[np.isnan(y)] = np.nanmedian(y)
+    return(y)
+
 
 def load_mmap(fn):
     '''
@@ -83,24 +129,44 @@ def load_dia_emg(mmap,meta,chan_id):
     return(dat,sr)
 
 
-def filt_int_ds_dia(x,sr,ds_factor=10,win=.01):
-    assert(type(ds_factor) is int )
+def filt_int_ds_dia(x,sr,ds_factor=10):
+    '''
+    Filter, integrate and downsample the diaphragm. Detect and summarize the diaphragm bursts
+    Uses medfilt to smooth so it is a little slow, but it is worth it.
+    :param x:
+    :param sr:
+    :param ds_factor:
+    :return:
+    '''
+    assert(type(ds_factor) is int)
 
-    dia_filt = esig.remove_EKG(x,sr,thresh=2)
+    #Remove the EKG artifact
+    print('Removing the EKG...')
+    dia_filt = remove_EKG(x,sr,thresh=2)
     dia_filt[np.isnan(dia_filt)] = np.nanmedian(dia_filt)
-    sos = sig.butter(4,[300/sr/2,5000/sr/2],btype='bandpass',output='sos')
-    dia_filt2 = sig.sosfilt(sos,dia_filt)
 
 
+    # Filter for high frequency signal
+    sos = sig.butter(2,[300/sr/2,5000/sr/2],btype='bandpass',output='sos')
+    dia_filt = sig.sosfilt(sos,dia_filt)
 
-    smooth_win = sig.get_window('triang', int(win * sr))
-    integrated = np.sqrt(sig.convolve(dia_filt2 ** 2, smooth_win, 'same')) / len(smooth_win)
+    # Use medfilt to get the smoothed rectified EMG
+    print('Smoothing the rectified trace...')
 
-    dia_smooth = sig.savgol_filter(integrated,window_length=int(0.05*sr)+1,polyorder=1)
+    dd = median_filter(np.abs(dia_filt),int(sr*.05)+1)
+    # Smooth it out a little more
+    dia_smooth = sig.savgol_filter(dd,window_length=int(0.01*sr)+1,polyorder=1)
+
+    # Downsample because we don't need this at the original smapling rate
     dia_sub = dia_smooth[::ds_factor]
     sr_sub = sr/ds_factor
-    dia_df = proc.burst_stats_dia(dia_sub,sr_sub)
+
+    # get the burst statistics
+    dia_df = proc.burst_stats_dia(dia_sub,sr_sub,rel_height=0.95)
+
+    # Normalize the integrated diaphragm to a z-score.
     dia_sub = dia_sub/np.std(dia_sub)
+    print('Done processing diaphragm')
 
     return(dia_df,dia_sub,sr_sub)
 
