@@ -15,6 +15,7 @@ This script does the following:
 import os
 import re
 import sys
+import warnings
 sys.path.append('../')
 sys.path.append('../../')
 sys.path.append('../../utils')
@@ -27,17 +28,43 @@ from pathlib import Path
 import click
 from sklearn.mixture import BayesianGaussianMixture
 from scipy.ndimage.filters import median_filter
+import pandas as pd
 
 
-def remove_EKG(x,sr,,thresh=5):
+
+def get_hr(pks,dia_df,sr):
+    'computes the avergae heart rate'
+    ons = dia_df['on_samp']
+    offs = dia_df['off_samp']
+    for on,off in zip(ons,offs):
+        mask = np.logical_not(
+            np.logical_and(
+                pks>on,
+                pks<off
+            )
+        )
+        pks = pks[mask]
+
+    pulse = pd.DataFrame()
+    pulse['hr (bpm)'] = 60*sr/np.diff(pks)
+    aa = pulse.rolling(50,center=True).median()
+    aa.interpolate(limit_direction='both',inplace=True)
+    aa['t']=pks[:-1]/sr
+    return(aa)
+
+
+def remove_EKG(x,sr,thresh=2):
     '''
     :param x: diaphragm (or other) emg
     :param sr: sample rate
     :return: y ekg filtered out
+            pks - pulse times
     '''
+    warnings.filterwarnings('ignore')
     sos = sig.butter(2,[5/sr/2,500/sr/2],btype='bandpass',output='sos')
     xs = sig.sosfilt(sos,x)
     pks = sig.find_peaks(xs,prominence=thresh*np.std(xs),distance=0.05*sr)[0]
+    pks = pks[1:-1]
     amps = xs[pks]
     win = int(0.010 *sr)
     y = x.copy()
@@ -50,6 +77,10 @@ def remove_EKG(x,sr,,thresh=5):
 
     ekg_std = np.std(ekg[:30],0) +np.std(ekg[-30:],0)
     ekg_std = np.log(ekg_std)
+    mask = np.logical_not(np.isfinite(ekg_std))
+    ekg_std[mask] = np.nanmedian(ekg_std)
+
+
     bgm = BayesianGaussianMixture(2)
     cls = bgm.fit_predict(ekg_std[:,np.newaxis])
     cls[cls==0]=-1
@@ -75,7 +106,8 @@ def remove_EKG(x,sr,,thresh=5):
             y[pk - win:pk + win] -=med_ekg*scl
 
     y[np.isnan(y)] = np.nanmedian(y)
-    return(y)
+    warnings.filterwarnings('default')
+    return(y,pks)
 
 
 def load_mmap(fn):
@@ -142,7 +174,7 @@ def filt_int_ds_dia(x,sr,ds_factor=10):
 
     #Remove the EKG artifact
     print('Removing the EKG...')
-    dia_filt = remove_EKG(x,sr,thresh=2)
+    dia_filt,pulse = remove_EKG(x,sr,thresh=2)
     dia_filt[np.isnan(dia_filt)] = np.nanmedian(dia_filt)
 
 
@@ -162,13 +194,17 @@ def filt_int_ds_dia(x,sr,ds_factor=10):
     sr_sub = sr/ds_factor
 
     # get the burst statistics
+    warnings.filterwarnings('ignore')
     dia_df = proc.burst_stats_dia(dia_sub,sr_sub,rel_height=0.95)
+    warnings.filterwarnings('default')
+
+    HR = get_hr(pulse/ds_factor,dia_df,sr_sub)
 
     # Normalize the integrated diaphragm to a z-score.
     dia_sub = dia_sub/np.std(dia_sub)
     print('Done processing diaphragm')
 
-    return(dia_df,dia_sub,sr_sub)
+    return(dia_df,dia_sub,sr_sub,HR,dia_filt)
 
 
 def make_save_fn(fn,save_path,save_name='_aux_downsamp'):
@@ -187,7 +223,7 @@ def main(fn,pleth_chan,dia_chan,save_path):
 
     mmap,meta = load_mmap(fn)
     raw_dia,sr_dia = load_dia_emg(mmap,meta,dia_chan)
-    dia_df,dia_sub,sr_dia_sub = filt_int_ds_dia(raw_dia,sr_dia)
+    dia_df,dia_sub,sr_dia_sub,HR,dia_filt = filt_int_ds_dia(raw_dia,sr_dia)
     if pleth_chan<0:
         pleth = []
         sr_pleth = sr_dia_sub
@@ -201,15 +237,27 @@ def main(fn,pleth_chan,dia_chan,save_path):
     assert(sr_pleth == sr_dia_sub)
     t = np.arange(0, len(dia_sub)/sr_pleth, 1 / sr_pleth)
     t = t[:len(dia_sub)]
+
+    # Map heart ratea into t
+    hr_idx = np.searchsorted(t,HR['t'])
+    new_hr = pd.DataFrame()
+    new_hr['t'] = t
+    new_hr['hr'] = np.nan
+    new_hr.iloc[hr_idx,-1] = HR['hr (bpm)'].values
+    new_hr.interpolate(limit_direction='both',inplace=True)
+
+
     # Save the downsampled data to a mat file
     data_dict = {
         'pleth':pleth,
         'dia':dia_sub,
         'sr':sr_pleth,
+        'hr_bpm':new_hr['hr'].values,
         't':t
     }
     save_fn,prefix = make_save_fn(fn,save_path)
     sio.savemat(save_fn,data_dict,oned_as='column')
+
 
     # Save the extracted diaphragm to a csv
     # But strip the data referenced to the 10K sampling
@@ -217,6 +265,13 @@ def main(fn,pleth_chan,dia_chan,save_path):
     dia_df.to_csv(os.path.join(save_path,f'{prefix}_dia_stat.csv'))
 
     dia_df['on_sec'].to_csv(os.path.join(save_path,f'{prefix}_dia_onsets.csv'),index=False)
+
+    data_dict_raw = {
+        'dia':dia_filt,
+        't':np.arange(0,len(dia_filt)/sr_dia,1/sr_dia)
+    }
+    save_fn,prefix = make_save_fn(fn,save_path,save_name='_filtered_dia')
+    sio.savemat(save_fn,data_dict_raw,oned_as='column')
 
 
 @click.command()

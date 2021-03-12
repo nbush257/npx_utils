@@ -508,7 +508,7 @@ def integrate_dia(dia,sr,qrs_thresh=6,method='triang',win=0.05):
     return(integrated,pulse_times)
 
 
-def burst_stats_dia(integrated,sr,dia_thresh=1):
+def burst_stats_dia(integrated,sr,dia_thresh=1,rel_height=0.8):
     '''
     Calculate diaphragm burst features
     :param integrated: integrated diaphragm trace
@@ -524,8 +524,8 @@ def burst_stats_dia(integrated,sr,dia_thresh=1):
                                   prominence=dia_thresh,
                                   distance=int(0.200*sr),
                                   width=int(0.050*sr))[0]
-    lips = scipy.signal.peak_widths(integrated,pks,rel_height=0.8)[2]
-    rips = scipy.signal.peak_widths(integrated,pks,rel_height=0.8)[3]
+    lips = scipy.signal.peak_widths(integrated,pks,rel_height=rel_height)[2]
+    rips = scipy.signal.peak_widths(integrated,pks,rel_height=rel_height)[3]
     lips = lips.astype('int')
     rips = rips.astype('int')
 
