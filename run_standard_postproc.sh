@@ -8,7 +8,7 @@
 #PBS -q paidq
 #PBS -e /active/ramirez_j/ramirezlab/nbush/logs
 #PBS -o /active/ramirez_j/ramirezlab/nbush/logs
-#PBS -J 0-42
+#PBS -J 0-50
 
 source activate opioid
 export PYTHONWARNINGS="ignore"

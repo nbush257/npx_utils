@@ -522,8 +522,8 @@ def burst_stats_dia(integrated,sr,dia_thresh=1,rel_height=0.8):
 
     pks = scipy.signal.find_peaks(integrated_scl,
                                   prominence=dia_thresh,
-                                  distance=int(0.200*sr),
-                                  width=int(0.050*sr))[0]
+                                  distance=int(0.100*sr),
+                                  width=int(0.025*sr))[0]
     lips = scipy.signal.peak_widths(integrated,pks,rel_height=rel_height)[2]
     rips = scipy.signal.peak_widths(integrated,pks,rel_height=rel_height)[3]
     lips = lips.astype('int')
@@ -585,7 +585,11 @@ def events_in_epochs(evt,epoch_times,epoch_labels=None):
     )
     cat[mask] = ii+1
 
-    return(cat)
+    labels = None
+    if epoch_labels is not None:
+        labels = [epoch_labels[int(x)] for x in cat]
+
+    return(cat,labels)
 
 
 def jitter(data,l):

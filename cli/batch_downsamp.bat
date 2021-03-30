@@ -1,0 +1,11 @@
+python .\downsample_and_proc.py Y:\projects\dynaresp\data\raw\m2020-18
+python .\downsample_and_proc.py Y:\projects\dynaresp\data\raw\m2020-19
+python .\downsample_and_proc.py Y:\projects\dynaresp\data\raw\m2020-20
+python .\downsample_and_proc.py Y:\projects\dynaresp\data\raw\m2020-23
+python .\downsample_and_proc.py Y:\projects\dynaresp\data\raw\m2021-01
+python .\downsample_and_proc.py Y:\projects\dynaresp\data\raw\m2021-04
+python .\downsample_and_proc.py Y:\projects\dynaresp\data\raw\m2021-05
+python .\downsample_and_proc.py Y:\projects\dynaresp\data\raw\m2021-07
+python .\downsample_and_proc.py Y:\projects\dynaresp\data\raw\m2021-08
+python .\downsample_and_proc.py Y:\projects\dynaresp\data\raw\m2021-09
+python .\downsample_and_proc.py Y:\projects\dynaresp\data\raw\m2021-10
