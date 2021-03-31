@@ -21,6 +21,7 @@ import utils.brian_utils.postproc as bup
 from spykes.plot import NeuroVis,PopVis
 from tqdm import tqdm
 import scipy.io.matlab as sio
+import re
 
 
 def spike_times_npy_to_sec(sp_fullPath, sample_rate = 0, bNPY = True):
@@ -360,6 +361,88 @@ def load_aux(ks_dir,t=0):
     breaths = breaths.reset_index().drop('Var1',axis=1)
 
     return(epochs,breaths,aux_dat)
+
+
+def get_opto_df(raw_opto,v_thresh,ni_sr,min_dur=0.001,max_dur=10):
+    '''
+
+    :param raw_opto: raw current sent to the laser or LED (1V/A)
+    :param v_thresh: voltage threshold to find crossing
+    :param ni_sr: sample rate (Hz)
+    :param min_dur: minimum stim duration in seconds
+    :param max_dur: maximum stim duration in seconds
+    :return: opto-df a dataframe with on, off, and amplitude
+    '''
+    ons,offs = binary_onsets(raw_opto,v_thresh)
+    durs = offs-ons
+    opto_df = pd.DataFrame()
+    opto_df['on'] = ons
+    opto_df['off'] = offs
+    opto_df['durs'] = durs
+
+    min_samp = ni_sr*min_dur
+    max_samp = ni_sr*max_dur
+    opto_df = opto_df.query('durs<=@max_samp & durs>=@min_samp').reset_index(drop=True)
+
+    amps = np.zeros(opto_df.shape[0])
+    for k,v in opto_df.iterrows():
+        amps[k] = np.median(raw_opto[v['on']:v['off']])
+    opto_df['amps'] = np.round(amps,2)
+
+    opto_df['on_sec'] = opto_df['on']/ni_sr
+    opto_df['off_sec'] = opto_df['off']/ni_sr
+    opto_df['dur_sec'] = np.round(opto_df['durs']/ni_sr,3)
+
+    return(opto_df)
+
+
+def parse_dir(ks_dir):
+    mouse_id = re.search('m\d\d\d\d-\d\d',ks_dir).group()
+    gate = int(re.search('g\d',ks_dir).group()[1:])
+    probe = re.search('imec\d',ks_dir).group()
+    dd = {}
+    dd['mouse_id'] = mouse_id
+    dd['gate'] = gate
+    dd['probe'] = probe
+    return(dd)
+
+
+def get_ni_bin_from_ks_dir(ks_dir,search_p = None):
+    sess_spec = parse_dir(ks_dir)
+
+    if search_p is None:
+        if os.sys.platform == 'linux':
+            search_p = '/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/raw'
+        else:
+            search_p = 'Y:/projects/dynaresp/data/raw'
+
+
+
+    ni_bin_list = glob.glob(f'{search_p}/{sess_spec["mouse_id"]}/{sess_spec["mouse_id"]}_g{sess_spec["gate"]}/*nidq.bin')
+
+    if len(ni_bin_list) >1:
+        print('More than one trigger found, looking in processed for a concatenated nidaq file')
+        if os.sys.platform == 'linux':
+            search_p = '/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed'
+        else:
+            search_p = 'Y:/projects/dynaresp/data/processed'
+        ni_bin_list = glob.glob(f'{search_p}/{sess_spec["mouse_id"]}/*{sess_spec["mouse_id"]}_g{sess_spec["gate"]}/*tcat*nidq.bin')
+    ni_bin_fn = ni_bin_list[0]
+
+    return(ni_bin_fn)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

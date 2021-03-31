@@ -988,14 +988,3 @@ def get_sta(x,tvec,ts,win=0.5):
     return(sta)
 
 
-
-
-
-
-
-
-
-
-
-
-
