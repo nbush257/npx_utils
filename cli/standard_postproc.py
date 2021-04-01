@@ -328,7 +328,7 @@ def compute_opto_tag(ts,opto_time,stim_len):
     raster = raster['data'][0]
     post_spikes = neuron.get_spikecounts(event=0,df=opto_time,window=[1,stim_len])
     n_stims = opto_time.shape[0]
-    if n_stims*0.10> np.sum(post_spikes):
+    if n_stims*0.40> np.sum(post_spikes):
         return(raster,tagged)
     pre = psth_pre['data'][0]
     post = psth_post['data'][0]
