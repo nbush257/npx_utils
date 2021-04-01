@@ -432,6 +432,9 @@ def get_ni_bin_from_ks_dir(ks_dir,search_p = None):
     return(ni_bin_fn)
 
 
+def spikes2neo_trains():
+    pass
+
 
 
 

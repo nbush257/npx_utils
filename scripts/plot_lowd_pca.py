@@ -15,6 +15,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import os
 import numpy as np
 import scipy.io.matlab as sio
+from sklearn.preprocessing import StandardScaler
 
 
 def plot_pca(pca,X,bins,breaths,aux,epochs,opto_df,max_t):
@@ -80,7 +81,7 @@ def plot_pca(pca,X,bins,breaths,aux,epochs,opto_df,max_t):
     ax.set_ylabel('Resp. Rate (Hz)')
     ax.set_ylim(0,12)
     sns.despine()
-    epochs = epochs.query('t0*60<@max_t')
+    # epochs = epochs.query('t0*60<@max_t')
     for k,v in epochs.iterrows():
         t_epoch = v['t0']* 60
         ax.axvline(t_epoch, c='k', ls='--', lw=2)
@@ -88,7 +89,7 @@ def plot_pca(pca,X,bins,breaths,aux,epochs,opto_df,max_t):
 
     for k,v in opto_df.iterrows():
         ax.axvspan(v['on_sec'],v['off_sec'],color='c',alpha=0.3)
-    ax.set_xlim(0, max_t)
+    # ax.set_xlim(0, max_t)
     ax.set_xlabel('time (s)')
 
     # ====================== #
@@ -118,10 +119,13 @@ def main(ks_dir,max_t):
     raster, cell_id, bins = proc.bin_trains(spikes['ts'], spikes['cell_id'], binsize=0.005)
     aa = gaussian_filter1d(raster, sigma=5, axis=1)
     aa[np.isnan(aa)] = 0
+    bb = np.sqrt(aa).T
+    bb[np.isnan(bb)] = 0
+    bb[np.isinf(bb)] = 0
     last_time = np.searchsorted(bins, epochs.iloc[0, 1] * 60)
     pca = PCA(10)
-    pca.fit(aa[:, :last_time].T)
-    X = pca.transform(aa.T)
+    pca.fit(bb[:last_time,:])
+    X = pca.transform(bb)
 
     ni_bin_fn = data.get_ni_bin_from_ks_dir(ks_dir)
     opto = data.get_ni_analog(ni_bin_fn,3)
