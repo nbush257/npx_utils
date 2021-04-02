@@ -136,7 +136,7 @@ def get_ni_analog(ni_bin_fn, chan_id):
     return(analog_dat)
 
 
-def get_concatenated_spikes(ks_dir, use_label='intersect', ks_version=3):
+def get_concatenated_spikes(ks_dir, use_label='intersect'):
     '''
     Built on top of create_spike_dict and create_spike_df
     Returns a minimal set of concatenated spike data. Probably the most useful
@@ -148,9 +148,9 @@ def get_concatenated_spikes(ks_dir, use_label='intersect', ks_version=3):
     # spike_df = create_spike_df(ks2_dir)
     ts = np.load(f'{ks_dir}/spike_times_sec.npy').ravel()
     idx = np.load(f'{ks_dir}/spike_clusters.npy').ravel()
-    if ks_version==2:
+    try:
         metrics = pd.read_csv(f'{ks_dir}/metrics.csv', index_col=0)
-    elif ks_version==3:
+    except:
         metrics = pd.read_csv(f'{ks_dir}/waveform_metrics.csv', index_col=0)
     depths = np.load(f'{ks_dir}/channel_positions.npy')[:, 1]
     dd = pd.DataFrame()
