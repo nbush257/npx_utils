@@ -9,6 +9,7 @@ from tqdm import tqdm
 from spykes.plot import NeuroVis
 import sys
 import sklearn
+import scipy.ndimage
 sys.path.append('../../')
 sys.path.append('../')
 sys.path.append('.')
@@ -1027,4 +1028,63 @@ def event_average_mod_depth(spikes,events,pre=0.25,post=0.5,method='sqrt'):
     df['cell_id'] = cell_id
     df['event_triggered_modulation'] = mod_depth
     return(df)
+
+def get_binned_event_rate(evt,dt,start_time=0,stop_time=None,method='hist'):
+    '''
+
+    Use this as an alternative to the instantaneous frequency.
+    Typical use is to get the breathing rate.
+
+    :param evt: list or array of events (units of time - typically seconds)
+    :param dt: window size to count the number of events over. MUST BE SAME UNITS AS evt
+    :param start_time: must be same units as evt
+    :param stop_time: default=None; if None, takes the last event as the end time
+    :param method: hist, gaussian, boxcar. Hist uses non overlapping windows, gaussian and boxcar use sliding windows
+    :return: t_vec,rate
+    '''
+
+    # Use the last event as the stop time if none given
+    if stop_time is None:
+        stop_time = np.max(evt)+0.1 #this epsilon allows for last event to be included
+
+    # Make sure we only use events before the stop time
+    last_event = np.searchsorted(evt,stop_time)
+    evt = evt[:last_event]
+
+    # Hist method is very coarse; uses non overlapping bins to get the number of events in
+    # equally spaced time windows
+    if method=='hist':
+        bins = np.arange(start_time, stop_time, dt)
+        rate,t_vec = np.histogram(evt,bins)
+        t_vec = t_vec[:-1]
+        rate  = rate/dt
+    # Gaussian  passes the event as a boolean to a smoothing convolution
+    elif method=='gaussian':
+        res = 0.1
+        t_vec = np.arange(start_time,stop_time,res)
+        idx = np.searchsorted(t_vec,evt)
+        b_evt = np.zeros_like(t_vec)
+        b_evt[idx]=1
+        rate = scipy.ndimage.gaussian_filter1d(b_evt,sigma=dt/res)
+        rate =rate/res
+    # other methods try to pass "method" as a window" for convolution
+    else:
+        res = 0.1
+        t_vec = np.arange(start_time,stop_time,res)
+        idx = np.searchsorted(t_vec,evt)
+        b_evt = np.zeros_like(t_vec)
+        b_evt[idx]=1
+        try:
+            kernel = scipy.signal.get_window(method,int(dt/res))
+        except:
+            raise NotImplementedError(f'Chosen method: {method} is not supported. Choose ["hist","gaussian"] or a scipy.signal.get_window() supported window')
+        rate = scipy.ndimage.convolve1d(b_evt,kernel)
+        rate =rate/np.sum(kernel)/res
+    return(t_vec,rate)
+
+
+
+
+
+
 
