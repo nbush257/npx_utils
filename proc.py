@@ -1029,6 +1029,7 @@ def event_average_mod_depth(spikes,events,pre=0.25,post=0.5,method='sqrt'):
     df['event_triggered_modulation'] = mod_depth
     return(df)
 
+
 def get_binned_event_rate(evt,dt,start_time=0,stop_time=None,method='hist'):
     '''
 

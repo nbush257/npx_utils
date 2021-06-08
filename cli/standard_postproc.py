@@ -34,14 +34,6 @@ except:
     import data
     import visualize as viz
 
-def test():
-    ks2_dir = r'C:\Users\nbush\Desktop\explor_data\ks2'
-    ni_bin_fn = r'C:\Users\nbush\Desktop\explor_data\m2020-18_g0_t0.nidq.bin'
-    DIA_CHAN=1
-    PLETH_CHAN=0
-
-    pass
-
 
 def transform_phase(phi):
     '''
@@ -110,7 +102,7 @@ def plot_long_raster(spikes,breaths,epochs):
     ax1.pcolormesh(bins,cell_id,raster,cmap='Greys')
     ax2 = f.add_subplot(gs[-2:-1,0],sharex=ax1)
     ax2.plot(breaths['on_sec'],breaths['inst_freq'],'k.',alpha=0.05)
-    ax2.set_ylim(0,10)
+    ax2.set_ylim(0,5)
 
     ymax = np.max(cell_id)
     for ii,v in epochs.iterrows():
@@ -140,7 +132,6 @@ def mean_dia(aux,breaths,pre,post,key='on_sec'):
     mm = np.nanmean(mm,1)
     mm -=np.min(mm)
     return(win_t,mm)
-
 
 
 def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_times,aux,is_tagged,stim_len,trial_epochs):
@@ -206,11 +197,12 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
         theta_k = theta_k[:-1]+np.diff(theta_k)[0]
         kl = proc.compute_KL(phi_slice,btrain,25)
         KL.append(kl)
-        plt.polar(theta_k, rr * sr, color=cmap[ii])
+        ax0.plot(theta_k, rr * sr, color=cmap[ii])
 
 
     ax0.set_xticks([0,np.pi/2,np.pi,3*np.pi/2])
     ax0.set_xticklabels(['I_on','','I_off','pre-I'],fontsize=6)
+    # ax0.set_ylim([0,np.max(rr*sr)])
 
     plt.suptitle(f'Neuron {neuron_id}; loc:{depth:0.0f}um; Coh.:{np.mean(COH):0.2f}; clu_id:{clu_id}')
 
@@ -259,7 +251,7 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     ax4.plot(dia_df['inst_freq'],dia_df['on_sec']/60,'.',color='tab:red',alpha=0.3)
     ax4.hlines(dia_df.query('type=="sigh"')['on_sec']/60,ax4.get_xlim()[0],ax4.get_xlim()[1],color=cm.Dark2([3]),linestyles='--',lw=0.5)
     ax4.set_ylim(ax3.get_ylim())
-    ax4.set_xlim(0,10)
+    ax4.set_xlim(0,5)
     ax4.set_xlabel('Freq. (Hz)')
 
     ax7 = f.add_subplot(gs[2,:2])
@@ -353,6 +345,7 @@ def mean_tensor(TT,raster):
     mean_breath[np.isnan(mean_breath)] = 0
     return(mean_breath)
 
+
 def plot_mean_breaths(spikes,breaths,max_time,p_save,prefix,coherence,coh_thresh=0.2):
     def do_plot(mean_dat,scl = None,good_neurons=None):
         f, ax = plt.subplots(nrows=1, ncols=2, figsize=(4, 5))
@@ -419,13 +412,12 @@ def get_opto_data(ks2_dir,stim_len):
     :return:
     '''
     try:
-        opto_fn = glob.glob(os.path.join(ks2_dir, f'../../*XD_8_0_{stim_len}.txt'))[0]
+        opto_fn = glob.glob(os.path.join(ks2_dir,f'../../*XD_8_0_{stim_len}.adj.txt'))[0]
         opto_time = pd.read_csv(opto_fn,header=None)
     except:
         try:
-            opto_fn = glob.glob(os.path.join(ks2_dir, '../../*XD_8_0_10.adj.txt'))[0]
+            opto_fn = glob.glob(os.path.join(ks2_dir, f'../../*XD_8_0_{stim_len}.txt'))[0]
             opto_time = pd.read_csv(opto_fn, header=None)
-            stim_len = 10
         except:
             try:
                 opto_fn = glob.glob(os.path.join(ks2_dir, '../../*XD_8_0_10.txt'))[0]

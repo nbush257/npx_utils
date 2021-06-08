@@ -10,6 +10,7 @@
 #PBS -o /active/ramirez_j/ramirezlab/nbush/logs
 #PBS -J 0-200
 
+#0-200
 source activate opioid
 export PYTHONWARNINGS="ignore"
 
