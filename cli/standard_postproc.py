@@ -61,10 +61,10 @@ def transform_phase(phi):
 def plot_epochs(breaths,epochs,aux):
     f = plt.figure(figsize=(7,6))
     ax = f.add_subplot(311)
-    ax.plot(breaths['on_sec'],1/breaths['postBI'],'k.',alpha=0.05)
+    ax.plot(breaths['on_sec'],breaths['inst_freq'],'k.',alpha=0.05)
     ax2 = ax.twinx()
     ax2.plot(aux['t'],aux['dia'],'tab:red',lw=0.5,alpha=0.5)
-    ymax = 1/breaths['postBI'].min()
+    ymax = breaths['inst_freq'].min()
     for ii,v in epochs.iterrows():
         ax.axvline(v['t0']*60,c='r',ls=':')
         if(np.isnan(v['tf'])):
@@ -74,9 +74,9 @@ def plot_epochs(breaths,epochs,aux):
     ax2.set_ylabel('Dia',color='tab:red')
 
     ax3 = f.add_subplot(312,sharex=ax,sharey=ax)
-    ax3.plot(breaths['on_sec'],1/breaths['postBI'].rolling(50).mean(),'k',lw=1,alpha=0.7,label='mean_freq')
+    ax3.plot(breaths['on_sec'],breaths['inst_freq'].rolling(50).mean(),'k',lw=1,alpha=0.7,label='mean_freq')
     ax4 = ax3.twinx()
-    ax4.plot(breaths['on_sec'],breaths['postBI'].rolling(50).std(),'tab:green',lw=1,alpha=0.7,label='std_freq')
+    ax4.plot(breaths['on_sec'],breaths['inst_freq'].rolling(50).std(),'tab:green',lw=1,alpha=0.7,label='std_freq')
     for ii,v in epochs.iterrows():
         ax3.axvline(v['t0']*60,c='r',ls=':')
         if(np.isnan(v['tf'])):
@@ -109,7 +109,7 @@ def plot_long_raster(spikes,breaths,epochs):
     # ax1.pcolormesh(bins,cell_id,raster,cmap='Greys',vmin=0,vmax=np.percentile(raster,85))
     ax1.pcolormesh(bins,cell_id,raster,cmap='Greys')
     ax2 = f.add_subplot(gs[-2:-1,0],sharex=ax1)
-    ax2.plot(breaths['on_sec'],1/breaths['postBI'],'k.',alpha=0.05)
+    ax2.plot(breaths['on_sec'],breaths['inst_freq'],'k.',alpha=0.05)
     ax2.set_ylim(0,10)
 
     ymax = np.max(cell_id)
@@ -256,7 +256,7 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
             ax3.text(500,v['t0'],v['label'],rotation=0,fontsize='x-small')
 
     ax4 = f.add_subplot(gs[:,-2:],sharey=ax3)
-    ax4.plot(1/dia_df['postBI'],dia_df['on_sec']/60,'.',color='tab:red',alpha=0.3)
+    ax4.plot(dia_df['inst_freq'],dia_df['on_sec']/60,'.',color='tab:red',alpha=0.3)
     ax4.hlines(dia_df.query('type=="sigh"')['on_sec']/60,ax4.get_xlim()[0],ax4.get_xlim()[1],color=cm.Dark2([3]),linestyles='--',lw=0.5)
     ax4.set_ylim(ax3.get_ylim())
     ax4.set_xlim(0,10)
@@ -541,6 +541,8 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
 
     plt.style.use('seaborn-paper')
     epochs,breaths,aux = data.load_aux(ks2_dir)
+    breaths = breaths.eval('IBI=duration_sec+postBI')
+    breaths = breaths.eval('inst_freq=1/IBI')
     max_time = np.min([aux['t'][-1],t_max])
     print(f'Max time is: {max_time:0.1f}s or {max_time/60:0.0f}m')
     breaths = proc.compute_breath_type(breaths) # classify sighs, apneas
