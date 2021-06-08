@@ -736,7 +736,15 @@ def jitter_NEB(data,l):
 
 
 def ccg_v2(ts,idx,events,max_time=1000,event_window=1):
+    '''
 
+    :param ts: all spikes
+    :param idx: cell ids of all spikes
+    :param events: any event, (usually breath on)
+    :param max_time:
+    :param event_window:
+    :return: ccg_out -
+    '''
 
     jitterwindow=25
 
@@ -987,4 +995,36 @@ def get_sta(x,tvec,ts,win=0.5):
 
     return(sta)
 
+def get_coherence(spikes,cell_id,x,xt,t0,tf):
+    #TODO: generalize
+    pass
+
+
+def event_average_mod_depth(spikes,events,pre=0.25,post=0.5,method='sqrt'):
+    '''
+    Computes the modulation depth of the average firing rate with respect to a given event
+    The modulation depth is defined as: (maxFR-min_FR)/sqrt(maxFR+minFR)
+    This has not been thoroughly validated as a good metric, but it allows for decent scaling properties it seems
+
+    returns a dataframe with cell id and modulation depth as columns. cell_id will index appropriately with the cell_id
+    from the "spikes" dataframe
+
+    :param spikes: the spikes dataframe
+    :param events: the events to time lock to and average
+    :param pre: [seconds] the window prior to the event to consider (default =0.25)
+    :param post: [seconds] the window after the event to consider (default=0.5)
+    :return:
+    '''
+    raster,cell_id,bins = bin_trains(spikes.ts,spikes.cell_id,max_time=events[-1],binsize=.015)
+    TT_eup,raster_bins = models.raster2tensor(raster,bins,events,pre=pre,post=post)
+    raster_bins = raster_bins[1:]-(raster_bins[1]-raster_bins[0])/2
+    mean_eup = np.mean(TT_eup,2)
+    if method=='sqrt':
+        mod_depth = np.abs((np.max(mean_eup, 0) - np.min(mean_eup, 0)) / np.sqrt((np.max(mean_eup, 0) + np.min(mean_eup, 0))))
+    else:
+        mod_depth = np.abs((np.max(mean_eup, 0) - np.min(mean_eup, 0)) /((np.max(mean_eup, 0) + np.min(mean_eup, 0))))
+    df = pd.DataFrame()
+    df['cell_id'] = cell_id
+    df['event_triggered_modulation'] = mod_depth
+    return(df)
 

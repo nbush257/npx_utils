@@ -143,7 +143,7 @@ def mean_dia(aux,breaths,pre,post,key='on_sec'):
 
 
 
-def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_times,aux,is_tagged,stim_len):
+def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_times,aux,is_tagged,stim_len,trial_epochs):
     '''
     assumes continuous epochs
     :param spikes:
@@ -160,9 +160,15 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     if ts.shape[0]==0:
         return(0)
     depth = spikes[spikes.cell_id==neuron_id].depth.mean()
+    clu_id = spikes.query('cell_id==@neuron_id')['cluster_id']
+    if clu_id.nunique()==1:
+        clu_id = clu_id.values[0]
+    else:
+        clu_id = 'unknown'
+
     epochs_t0 = epoch_t[:-1]
     epochs_tf = epoch_t[1:]
-    cat = proc.events_in_epochs(dia_df['on_sec'], epoch_t)
+    cat = proc.events_in_epochs(dia_df['on_sec'], epoch_t)[0]
     dia_df['cat'] = cat
     neuron = NeuroVis(ts)
     t_dia_on,mean_on_dia = mean_dia(aux,dia_df,250,500)
@@ -206,7 +212,7 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     ax0.set_xticks([0,np.pi/2,np.pi,3*np.pi/2])
     ax0.set_xticklabels(['I_on','','I_off','pre-I'],fontsize=6)
 
-    plt.suptitle(f'Neuron {neuron_id}; loc:{depth:0.0f}um; Coh.:{np.mean(COH):0.2f}')
+    plt.suptitle(f'Neuron {neuron_id}; loc:{depth:0.0f}um; Coh.:{np.mean(COH):0.2f}; clu_id:{clu_id}')
 
     # =======================
     # Get diaphragm triggered
@@ -236,14 +242,18 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     raster = neuron.get_raster(df=dia_df,event='on_sec',window=[-500,500],binsize=5,plot=False)
     trial,tspike = np.where(raster['data'][0])
     bins = np.arange(raster['window'][0],raster['window'][1],raster['binsize'])
-    ax3.plot(bins[tspike],dia_df['on_sec'][trial]/60,'k.',ms=2,alpha=0.1)
+    ax3.plot(bins[tspike],dia_df['on_sec'][trial]/60,'k.',ms=3,alpha=0.25)
     ax3.set_ylabel('time [min]')
     ax3.set_xlabel('time [ms]')
     ax3.axvline(0,color='r',ls=':')
     ax3.set_ylim(epoch_t[0] / 60, epoch_t[-1] / 60)
     for ii, (t0, tf) in enumerate(zip(epochs_t0, epochs_tf)):
-        ax3.axhspan(t0/60,tf/60,color=cmap[ii],alpha=0.1)
+        # ax3.axhspan(t0/60,tf/60,color=cmap[ii],alpha=0.1)
         ax3.axhline(t0/60,color='k',ls=':')
+    for k,v in trial_epochs.iterrows():
+        if (v['t0']*60)<=epoch_t[-1]:
+            ax3.axhline(v['t0'])
+            ax3.text(500,v['t0'],v['label'],rotation=0,fontsize='x-small')
 
     ax4 = f.add_subplot(gs[:,-2:],sharey=ax3)
     ax4.plot(1/dia_df['postBI'],dia_df['on_sec']/60,'.',color='tab:red',alpha=0.3)
@@ -337,13 +347,13 @@ def compute_opto_tag(ts,opto_time,stim_len):
     return(raster,tagged)
 
 
-def plot_mean_breaths(spikes,breaths,max_time,p_save,prefix,coherence,coh_thresh=0.2):
-    def mean_tensor(TT,raster):
-        mean_breath = np.mean(TT, 2)
-        mean_breath = (mean_breath - np.mean(raster, 1)) / np.std(raster, 1)
-        mean_breath[np.isnan(mean_breath)] = 0
-        return(mean_breath)
+def mean_tensor(TT,raster):
+    mean_breath = np.mean(TT, 2)
+    mean_breath = (mean_breath - np.mean(raster, 1)) / np.std(raster, 1)
+    mean_breath[np.isnan(mean_breath)] = 0
+    return(mean_breath)
 
+def plot_mean_breaths(spikes,breaths,max_time,p_save,prefix,coherence,coh_thresh=0.2):
     def do_plot(mean_dat,scl = None,good_neurons=None):
         f, ax = plt.subplots(nrows=1, ncols=2, figsize=(4, 5))
         cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
@@ -429,6 +439,50 @@ def get_opto_data(ks2_dir,stim_len):
     else:
         print('No optotag data found')
     return(opto_time,opto_fn,stim_len)
+
+
+def run_ccg_connectivity(spikes,breath_on,max_time):
+    # TODO - get mapping of ccg_index to cell comparison
+        ccg_out,raw_ccg = proc.ccg_v2(spikes['ts'],spikes['cell_id'],breath_on,max_time)
+        exc_connx,inh_connx = proc.get_ccg_peaks(ccg_out)
+
+
+def plot_waterfall(spikes,breaths,max_time,mod_thresh=0.2,waterfall_color='tab:purple',figsize=(3,10)):
+    raster,cell_id,bins = proc.bin_trains(spikes.ts,spikes.cell_id,max_time=max_time,binsize=.015)
+    burst_dur = breaths['duration_sec'].mean()
+    pbi_dur = breaths['postBI'].mean()
+    TT_eup,raster_bins = models.raster2tensor(raster,bins,breaths.query('type=="eupnea"')['on_sec'],pre=0.25,post=burst_dur+pbi_dur)
+    raster_bins = raster_bins[1:]-(raster_bins[1]-raster_bins[0])/2
+    mean_eup = np.mean(TT_eup,2)
+    d2 = np.abs((np.max(mean_eup, 0) - np.min(mean_eup, 0)) / np.sqrt((np.max(mean_eup, 0) + np.min(mean_eup, 0))))
+    mean_eup = mean_eup[:,d2>mod_thresh]
+    order = np.argsort(np.nanargmax(mean_eup,0))
+    mean_eup = np.sqrt(mean_eup[:,order])
+
+    f = plt.figure(figsize=figsize)
+    if type(waterfall_color) is not str:
+        waterfall_color = waterfall_color(np.linspace(0,1,mean_eup.shape[1]))
+    else:
+        waterfall_color = [waterfall_color for x in range(mean_eup.shape[1])]
+    for ii in range(mean_eup.shape[1]):
+        plt.plot(raster_bins,mean_eup[:,ii]+ii*.8,color=waterfall_color[ii],lw=0.5)
+        # plt.plot(raster_bins,mean_eup[:,ii]+ii*.8,waterfall_color,lw=0.5)
+        plt.fill_between(raster_bins,np.zeros_like(mean_eup[:,ii])+ii*.8,mean_eup[:,ii]+ii*.8,color=waterfall_color[ii],lw=0,alpha=0.3)
+    plt.axvline(0, ls=':', color='k')
+    plt.axvline(burst_dur, ls=':', color='g')
+    plt.text(burst_dur/2, mean_eup.shape[1]*.8+1, 'Burst', ha='center', va='top', fontsize=8)
+    plt.xlabel('time [s]')
+    plt.ylabel(f'Tuned neurons (n={ii})')
+    plt.title('Eupnea Average $\sqrt{FR}$',loc='left')
+    plt.yticks([])
+    sns.despine(left=True)
+    ax = f.add_axes([0.7,0.9,0.2,0.05])
+    ax.hist(d2,25,color='r',alpha=0.4)
+    ax.set_title('Mod. Dist.',fontsize='xx-small')
+    plt.axvline(mod_thresh,color='k',ls=':')
+    ax.semilogy()
+    ax.semilogx()
+    plt.tight_layout()
 
 
 @click.command()
@@ -586,6 +640,12 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
     coh_idx = np.zeros(spikes['cell_id'].nunique())
     coh_idx[np.array(CELL_ID)] = np.array(COH)
     plot_mean_breaths(spikes,breaths,max_time,p_results,prefix,coh_idx,coh_thresh=0.15)
+    try:
+        plot_waterfall(spikes,breaths,max_time,waterfall_color='k')
+        plt.savefig(os.path.join(p_results, f'{prefix}_waterfall.png'), dpi=300)
+    except:
+        pass
+    plt.close('all')
 
     df_phase_tune.index= theta_k
     df_sc['theta'] = THETA
@@ -596,12 +656,23 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
     df_sc['phase_lag'] = LAG
     df_sc['tagged'] = TAGGED
 
+    psth_mod = proc.event_average_mod_depth(spikes,
+                                            breaths.query('type=="eupnea"')['on_sec'].values,
+                                            method='sqrt')
     dd = spikes.groupby(['cell_id']).mean()['depth'].reset_index()
+    df_sc = df_sc.merge(psth_mod,how='inner',on='cell_id')
     df_sc = df_sc.merge(dd,how='inner',on='cell_id')
     df_sc['mouse_id'] = mouse_id
     df_sc['gate_id'] = gate_id
     df_sc['probe_id'] = probe_id
     df_sc['uid'] = prefix
+    f = plt.figure(figsize=(4,3))
+    sns.scatterplot(x='event_triggered_modulation', y='coherence', data=df_sc, hue='l_dir')
+    sns.despine()
+    plt.tight_layout()
+    plt.savefig(os.path.join(p_results,f'{prefix}_tuning_strength_features.png'),dpi=300)
+    plt.close('all')
+
     df_sc.to_csv(os.path.join(p_results,f'{prefix}_phase_tuning_stats.csv'))
     df_phase_tune.to_csv(os.path.join(p_results,f'{prefix}_phase_tuning_curves.csv'))
     sio.savemat(os.path.join(p_results,f'{prefix}_tag_rasters.mat'),{'t':np.arange(-0.02,0.02,0.001),'raster':TAG_RASTER,'cell_id':CELL_ID})
@@ -612,7 +683,7 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
     print('Plotting single cell summaries...')
     for ii,cell_id in tenumerate(ordered_mod_depth):
         is_tagged = df_sc.query('cell_id==@cell_id')['tagged'].values
-        f = plot_single_cell_summary(spikes[spikes.ts<aux['t'][-1]],cell_id,epochs_time,breaths,phi,aux['sr'],opto_time,aux,is_tagged,stim_len)
+        f = plot_single_cell_summary(spikes[spikes.ts<aux['t'][-1]],cell_id,epochs_time,breaths,phi,aux['sr'],opto_time,aux,is_tagged,stim_len,epochs)
         if is_tagged:
             f.savefig(os.path.join(p_sc,f'{prefix}_summary_modrank{ii[0]:03.0f}_cellid{cell_id}_tagged.png'),dpi=150)
         else:

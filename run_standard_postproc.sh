@@ -8,7 +8,7 @@
 #PBS -q paidq
 #PBS -e /active/ramirez_j/ramirezlab/nbush/logs
 #PBS -o /active/ramirez_j/ramirezlab/nbush/logs
-#PBS -J 0-50
+#PBS -J 0-200
 
 source activate opioid
 export PYTHONWARNINGS="ignore"
@@ -16,7 +16,7 @@ export PYTHONWARNINGS="ignore"
 dir_list=()
 t_max_list=()
 opto_len_list=()
-data_org_fn=/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/ks3_dirs.csv
+data_org_fn=/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/ks3_dirs_filtered.csv
 while IFS=, read -r ks3_dir t_max opto_len
 do
     dir_list+=($ks3_dir)
