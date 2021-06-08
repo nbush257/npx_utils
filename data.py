@@ -146,7 +146,18 @@ def get_concatenated_spikes(ks_dir, use_label='intersect'):
     '''
 
     # spike_df = create_spike_df(ks2_dir)
-    ts = np.load(f'{ks_dir}/spike_times_sec.npy').ravel()
+    if os.path.isfile(f'{ks_dir}/spike_times_sec.npy'):
+        ts = np.load(f'{ks_dir}/spike_times_sec.npy').ravel()
+    else:
+        print('NO SPIKETIMES_SEC FOUND. Converting and saving')
+        t_samps = np.load(f'{ks_dir}/spike_times.npy').ravel()
+        ap_bin = glob.glob(f'{ks_dir}/../*.bin')[0]
+        meta = readSGLX.readMeta(Path(ap_bin))
+        spike_sr = readSGLX.SampRate(meta)
+        ts = t_samps/spike_sr
+        with open(f'{ks_dir}/spike_times_sec.npy','wb') as fid:
+            np.save(fid,ts)
+
     idx = np.load(f'{ks_dir}/spike_clusters.npy').ravel()
     try:
         metrics = pd.read_csv(f'{ks_dir}/metrics.csv', index_col=0)
@@ -232,7 +243,7 @@ def filter_default_metrics(spikes,metrics):
     spikes = filter_by_spikerate(spikes,100)
     spikes = filter_by_metric(spikes,metrics,'isi_viol<2 ')
     spikes = filter_by_metric(spikes,metrics,'amplitude_cutoff<0.2')
-    spikes = filter_by_metric(spikes,metrics,'amplitude>150')
+    # spikes = filter_by_metric(spikes,metrics,'amplitude>150')
 
     return(spikes)
 
@@ -253,14 +264,14 @@ def resort_by_depth(spikes):
 
     return(spikes)
 
-def load_filtered_spikes(ks2_dir,ks_version=3):
+def load_filtered_spikes(ks2_dir,use_filters=True):
     '''
     Convinience function to load the standard qc controlled spikes
     :param ks2_dir:
     :return:
     '''
     spikes,metrics = get_concatenated_spikes(ks2_dir)
-    if ks_version !=3:
+    if use_filters:
         spikes = filter_default_metrics(spikes,metrics)
     spikes = resort_by_depth(spikes)
     return(spikes,metrics)
@@ -322,6 +333,12 @@ def get_event_triggered_st(ts,events,idx,pre_win,post_win):
 
 
 def load_aux(ks_dir,t=0):
+    '''
+    loads in the standard auxiliarry data from the neuropixel exp[eriments
+    :param ks_dir:
+    :param t:
+    :return: epochs,breaths,aux_dat
+    '''
 
     aux_dir = f'{ks_dir}/../../'
     epoch_list = glob.glob(aux_dir+'*epochs*.csv')
