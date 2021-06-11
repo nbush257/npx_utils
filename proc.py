@@ -607,10 +607,13 @@ def get_coherence(ts,x,x_sr,t0,tf):
     if type(ts) is not pq.quantity.Quantity:
         ts = ts*pq.s
 
-    ts = ts[ts<tf]
-    ts = ts[ts>t0]
-    spt = neo.SpikeTrain(ts,t_start = t0,t_stop=tf,units=pq.s)
-    sig = neo.AnalogSignal(x, units='V', sampling_rate=x_sr * pq.Hz,t_start=t0,t_stop=tf)
+    s0 = int(t0*x_sr)
+    sf = int(tf*x_sr)
+    x_slice = x[s0:sf]
+    sig = neo.AnalogSignal(x_slice, units='V', sampling_rate=x_sr * pq.Hz,t_start=t0)
+    ts = ts[ts<sig.t_stop]
+    ts = ts[ts>sig.t_start]
+    spt = neo.SpikeTrain(ts,t_start = sig.t_start,t_stop=sig.t_stop,units=pq.s)
     sfc, freqs = elephant.sta.spike_field_coherence(sig, spt, nperseg=8192)
     coh = np.max(sfc.magnitude)
 
@@ -618,7 +621,7 @@ def get_coherence(ts,x,x_sr,t0,tf):
 
 
 
-def get_coherence_all(spikes,x,x_sr,t0,tf):
+def get_coherence_all(spikes,x,x_sr,t0,tf,method='static'):
     '''
     wrapper to get_coherence to run on all cells in spikes
     :param ts: spiketimes (in s). Can be a quantity
@@ -630,14 +633,35 @@ def get_coherence_all(spikes,x,x_sr,t0,tf):
     '''
     coh = []
     cells = []
-    for cell_id in tqdm(spikes['cell_id'].unique()):
-        ts = spikes.query('cell_id==@cell_id')['ts'].values
-        cc = get_coherence(ts,x,x_sr,t0,tf)[0]
-        coh.append(cc)
-        cells.append(cell_id)
-    coh_df = pd.DataFrame()
-    coh_df['cell_id'] = cells
-    coh_df['coherence'] = coh
+    if method == 'static':
+        for cell_id in tqdm(spikes['cell_id'].unique()):
+            ts = spikes.query('cell_id==@cell_id')['ts'].values
+            cc = get_coherence(ts,x,x_sr,t0,tf)[0]
+            coh.append(cc)
+            cells.append(cell_id)
+    elif method == 'moving':
+        # use this method to break the coherence calculations up into chunks because breathing changes rates.
+        # probably do not use
+        raise Warning('This method is not advised as of 2021-06-10. It nans out sometimes, and causes inflation of low coherence cells')
+        binsize=100
+        t_bins = np.arange(t0,tf,binsize)
+        for cell_id in tqdm(spikes['cell_id'].unique()):
+            ts = spikes.query('cell_id==@cell_id')['ts'].values
+            ts = spikes.query('cell_id==@cell_id')['ts'].values
+            temp = []
+            for bin in t_bins[:-1]:
+                cc,sfc,freqs = get_coherence(ts,x,x_sr,t0=bin,tf=(bin+binsize))
+                temp.append(cc)
+            temp = np.array(temp)
+            temp = np.mean(temp)
+            coh.append(temp)
+            cells.append(cell_id)
+
+        coh_df = pd.DataFrame()
+        coh_df['cell_id'] = cells
+        coh_df['coherence'] = coh
+
+
 
 
 def event_average_mod_depth(spikes,events,pre=0.25,post=0.5,method='sqrt'):
