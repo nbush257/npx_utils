@@ -3,38 +3,7 @@ import numpy as np
 import tensortools as tt
 import matplotlib.pyplot as plt
 import pandas as pd
-def raster2tensor(raster,raster_bins,events,pre = .100,post = .200):
-    '''
-    Given the binned spikerates over time and a series of events,
-    creates a tensor that is shape [n_bins_per_trial,n_cells,n_trials]
-
-    :param raster: a [time x neurons] array of spike rates
-    :param raster_bins: array of times in seconds for each bin ( first dim of raster)
-    :param events: array of times in seconds at which each event started
-    :param pre: float, amount of time prior to event onset to consider a trial(positive, seconds)
-    :param post: float, amount of time after event onset to consider a trial (positive, seconds)
-    :return:
-        raster_T    - [time x cells x trials] tensor of spike rates for each trial (event)
-        bins        - array of values in seconds that describes the first dimension of raster_T
-    '''
-    dt = np.round(np.mean(np.diff(raster_bins)),5)
-    trial_length = int(np.round((pre+post)/dt))
-    keep_events = events>(raster_bins[0]-pre)
-    events = events[keep_events]
-    keep_events = events<(raster_bins[-1]-post)
-    events = events[keep_events]
-
-    raster_T = np.empty([trial_length,raster.shape[0],len(events)])
-
-    for ii,evt in enumerate(events):
-        t0 = evt-pre
-        t1 = evt+post
-        bin_lims = np.searchsorted(raster_bins,[t0,t1])
-        xx = raster[:,bin_lims[0]:bin_lims[0]+trial_length].T
-        raster_T[:,:,ii]= xx
-    bins = np.arange(-pre,post,dt)
-    return(raster_T,bins)
-
+from proc import raster2tensor
 def get_best_TCA(TT,max_rank=15,plot_tgl=True):
     ''' Fit ensembles of tensor decompositions.
         Returns the best model with the fewest parameters

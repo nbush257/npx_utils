@@ -1,7 +1,8 @@
-from scipy.signal import hilbert,savgol_filter,find_peaks
+import neo
+import quantities
+from scipy.signal import hilbert,savgol_filter
 import spykes
 import scipy.signal
-import matplotlib.pyplot as plt
 import scipy.stats
 import pandas as pd
 import numpy as np
@@ -10,26 +11,29 @@ from spykes.plot import NeuroVis
 import sys
 import sklearn
 import scipy.ndimage
+import elephant
+import quantities as pq
+import warnings
 sys.path.append('../../')
 sys.path.append('../')
 sys.path.append('.')
-import utils.ephys.signal as esig
-try:
-    from . import models
-except:
-    try:
-        import models
-    except:
-        print('could not load tensortools')
 
 
 def bwfilt(x,fs,low=300,high=10000):
+    '''
+    Convenience function to a 4th order butterworth bandpass filter
+    :param x: input vector
+    :param fs: sample rate (Hz)
+    :param low: (Hz)
+    :param high: (Hz)
+    :return: y - filtered vector
+    '''
     b,a = scipy.signal.butter(4,[low/fs/2,high/fs/2],btype='bandpass')
     y = scipy.signal.filtfilt(b,a,x)
     return(y)
 
 
-def calc_phase(x):
+def calc_phase(x,sr):
     '''
     Given an input array, use a Hilbert transform to return the phase of that signal
     over time.
@@ -47,8 +51,11 @@ def calc_phase(x):
     -------
     phi : vector of phase values on the interval [-pi:pi] over time
     '''
-
-    x = savgol_filter(x, 101, 2)
+    sgolay_win = sr*.01 # 10ms
+    if sgolay_win %2 ==0:
+        sgolay_win+=1
+    sgolay_win = int(sgolay_win)
+    x = savgol_filter(x, sgolay_win, 2)
     window = 500000
     overlap = 20000
     toss = 10000
@@ -93,6 +100,64 @@ def shift_phi(phi,insp_onset):
     new_phi = (new_phi + np.pi) % (2 * np.pi) - np.pi
 
     return(new_phi)
+
+
+def calc_dia_phase(ons,offs=None,t_start=0,t_stop=None,dt=1/1000):
+    '''
+    Computes breathing phase based on the diaphragm
+    Phase is [0,1] where 0 is diaphragm onset, 0.5 is diaphragm offset, and 1 is diaphragm onset again,
+     - NB: Technically can generalize to any on/off signal, but standard usage should be diaphragm
+    :param ons: timestamps of diaphragm onsets (sec)
+    :param offs: timestamps of diaphragm offsets (sec). If no offs is given, linearly spaces onsets
+    :param t_start: start time of the phase trace (default=0)
+    :param t_stop: stop time of the phase trace (default is last stop value)
+    :param dt: time between timesteps(set to 1kHz)
+    :return:
+            phi - phase over time
+            t_phi - timestamps of the phase vector
+    '''
+    if t_stop is None:
+        t_stop = offs[-1]
+    if t_stop<t_start:
+        raise ValueError(f'Stop time: {t_stop}s cannot be less than start time: {t_start}s')
+
+    offs = offs[offs>t_start]
+    offs = offs[offs<=t_stop]
+
+    ons = ons[ons>=t_start]
+    ons = ons[:len(offs)]
+
+
+    assert(len(ons)==len(offs))
+    assert(np.all(np.greater(offs,ons)))
+
+    t_phi =np.arange(t_start,t_stop,dt)
+    phi = np.zeros_like(t_phi)
+
+    n_breaths = len(ons)
+
+    if offs is not None:
+        for ii in range(n_breaths-1):
+            on = ons[ii]
+            off = offs[ii]
+            next_on = ons[ii+1]
+            idx = np.searchsorted(t_phi,[on,off,next_on])
+            phi[idx[0]:idx[1]] = np.linspace(0,0.5,idx[1]-idx[0])
+            try:
+                phi[idx[1]:idx[2]] = np.linspace(0.5,1,idx[2]-idx[1])
+            except:
+                print([on,off,next_on])
+                print(idx)
+                print(ii)
+
+    else:
+        for ii in range(n_breaths-1):
+            on = ons[ii]
+            next_on = ons[ii+1]
+            idx = np.searchsorted(t_phi,[on,next_on])
+            phi[idx[0]:idx[1]] = np.linspace(0,1,idx[1]-idx[0])
+
+    return(t_phi,phi)
 
 
 def get_PD_from_hist(theta_k,rate):
@@ -159,30 +224,22 @@ def angular_response_hist(angular_var, sp, nbins=100,min_obs=5):
     return rate,theta_k,theta,L_dir
 
 
-def compute_KL(var,sp,nbins=25,min_obs=5):
+def hist_tuning(x,x_t,st,bins=50):
     '''
-    Given an angular variable that varies on -pi:pi,
-    returns the probability of observing a spike (or gives a spike rate) normalized by
-    the number of observations of that angular variable.
-
-    INPUTS: angular var -- either a numpy array or a neo analog signal. Should be 1-D
-            sp -- type: neo.core.SpikeTrain, numpy array. Sp can either be single spikes or a rate
-    OUTPUTS:    rate -- the stimulus evoked rate at each observed theta bin
-                theta_k -- the observed theta bins
-                theta -- the preferred direction as determined by vector mean
-                L_dir -- The preferred direction tuning strength (1-CircVar)
+    Get the normalized tuning curve for a non-angular
+    value
+    :param x: Covariate to tune to
+    :param x_t: the time stamps of x
+    :param st: spike times
+    :param bins: bins for the histogram
+    :return:
     '''
+    prior,bins = np.histogram(x,bins=bins)
+    idx = np.searchsorted(x_t,st)
+    conditional,bins = np.histogram(x[idx],bins=bins)
+    posterior = conditional/prior
 
-
-    # not nan is a list of finite sample indices, rather than a boolean mask. This is used in computing the posterior
-    not_nan = np.where(np.isfinite(var))[0]
-    prior, prior_edges = np.histogram(var[not_nan], bins=nbins)
-    prior[prior < min_obs] = 0
-    # allows the function to take a spike train or a continuous rate to get the posterior
-    posterior, theta_k = np.histogram(var[not_nan], weights=sp[not_nan], bins=nbins)
-
-    KL = scipy.stats.entropy(posterior,prior)
-    return(KL)
+    return(posterior,bins[1:])
 
 
 def bin_trains(ts,idx,max_time=None,binsize=0.05,start_time=5):
@@ -192,7 +249,7 @@ def bin_trains(ts,idx,max_time=None,binsize=0.05,start_time=5):
     :param idx: cell index
     :param binsize:
     :param start_time:
-    :return:
+    :return: raster,cell_id,bins
     '''
     if max_time is None:
         max_time = np.max(ts)
@@ -342,173 +399,6 @@ def pop_is_mod(spiketimes,cell_id,events,**kwargs):
     return(is_mod,mod_depth)
 
 
-def events_to_rate(evt,max_time,dt,start_time=0):
-    '''
-    Calculate a time vector and a rate vector from discrete events.
-    Useful for mapping things like respiratory rate or heart rate
-
-    :param evt: array of times (in seconds) in which events occur
-    :param max_time: last time to map to
-    :param dt: time step to use between updates of rate
-    :return:
-            tvec - a vector of timestamps with the chosen dt
-            rate - the value of the rate over those timestamps
-    '''
-    tvec = np.arange(start_time,max_time,dt)
-    rate = np.zeros_like(tvec)
-    last_val = 0
-    for ii in range(1,len(evt)):
-        t0 = evt[ii-1]
-        tf = evt[ii]
-        rr = tf-t0
-        next_val = np.searchsorted(tvec,tf)
-        rate[last_val:next_val] = 1/rr
-        last_val = next_val
-
-    rate[last_val:]=1/rr
-    return(tvec,rate)
-
-
-def proc_pleth(pleth,sr,width=0.01,prominence=0.3,height = 0.3,distance=0.1):
-    '''
-    Calculates the inspiration onsets and offsets.
-    Only looks at positive deflections in the pleth
-    Takes find_peaks kwargs
-
-    :param pleth: Plethysmography data
-    :param tvec: Vector mapping samples to timestamps
-    :param width: Minimum width that the signal has to be above threshold to be considered an inspiration (s)
-    :param prominence: Miniumum prominence needed (see find_peaks) (v)
-    :param height: Minimum absolute height (v)
-    :param distance: Minimum time between inspirations (s)
-    :return:
-            pleth_on_t - timestamps of pleth onsets
-            pleth_data - dictionary of inspiration parameters:
-                on_samp:        Sample index of pleth onsets
-                off_samp:       Sample index of pleth onsets
-                amp:            Amplitude of pleth peak
-                duration_sec:   Duration of a pleth inspiration in seconds
-                duration_samp:  Duration of a pleth inspiration in seconds
-    '''
-
-    ## keep only positive pleth values to get inspirations
-    temp_pleth = pleth.copy()
-    temp_pleth[temp_pleth<0] = 0
-
-    # Sampling rate is the difference of the first 2 time samples
-
-
-    # Get pleth peaks
-    pk_pleth = scipy.signal.find_peaks(temp_pleth,width=width*sr,prominence=prominence,height=height,distance=distance*sr)[0]
-    pleth_on,pleth_off = scipy.signal.peak_widths(temp_pleth,pk_pleth,rel_height=0.9)[2:]
-
-    # Map the on and off to ints to allow for indexing
-    pleth_on = pleth_on.astype('int')
-    pleth_off = pleth_off.astype('int')
-
-    # Map indices to values
-    pleth_on_t = pleth_on/sr
-    pleth_off_t = pleth_off/sr
-    pleth_amp = pleth[pk_pleth]
-
-    pleth_data = {}
-    pleth_data['on_samp'] = pleth_on
-    pleth_data['off_samp'] = pleth_off
-    pleth_data['on_sec'] = pleth_on_t
-    pleth_data['off_sec'] = pleth_off_t
-    pleth_data['amp'] = pleth_amp
-    pleth_data['duration_sec'] = pleth_off_t-pleth_on_t
-    pleth_data['duration_samp'] = pleth_off-pleth_on
-    pleth_data['pk_samp'] = pk_pleth.astype('int')
-    pleth_data['pk_time'] = pk_pleth.astype('int')/sr
-    pleth_data['postBI'] = np.hstack([pleth_on_t[1:]-pleth_off_t[:-1],[np.nan]])
-    pleth_df = pd.DataFrame(pleth_data)
-
-    return(pleth_df)
-
-
-def proc_dia(dia,sr,qrs_thresh=6,dia_thresh=1,method='triang',win=0.05):
-    '''
-    Processes the raw diaphragm by performing filtering, EKG removal, rectification
-    integration, burst detection, and burst quantification
-    :param dia: raw diaphragm recording
-    :param sr: sample rate
-    :param qrs_thresh: threshold (standardized) to detect the ekg signal (default=6)
-    :param dia_thresh: threshold (standardized) to detect diaphragm recruitment
-    :param method: Either a scipy.signal.window string, or 'med' (warning- med is sloowww)
-    :return:
-            dia_df - DataFrame with various burst features as derived from the diaphragm
-            phys_df - DataFrame with physiology data - heart rate and diaphragm rate
-            integrated - array of integrated diaphragm
-    '''
-    max_t = len(dia)/sr
-    integrated,pulse_times = integrate_dia(dia,sr,qrs_thresh=qrs_thresh,method=method,win=win)
-    dia_df = burst_stats_dia(integrated,sr,dia_thresh=dia_thresh)
-
-    rate_t,dia_rate = events_to_rate(dia_df['on_sec'],max_t,0.1)
-    rate_t,pulse_rate = events_to_rate(pulse_times,max_t,0.1)
-    pulse_rate = scipy.signal.medfilt(pulse_rate,11)
-
-    phys_df = pd.DataFrame()
-    phys_df['t'] = rate_t
-    phys_df['heart_rate'] = pulse_rate
-    phys_df['dia_rate'] = dia_rate
-    phys_df = phys_df.set_index('t')
-    return(dia_df,phys_df,integrated)
-
-
-def integrate_dia(dia,sr,qrs_thresh=6,method='triang',win=0.05):
-    '''
-    Remove EKG and integrate the diaphragm trace
-    :param dia: raw diaphragm recording
-    :param sr: sample rate
-    :param qrs_thresh: threshold (standardized) to detect the ekg signal (default=6)
-    :param method: method by which to integrate ['med'...] 'med' is very slow, but good. Takes any valid argument to scipy.signal.get_window
-    :return:
-            integrated - integrated diaphragm trace
-            pulse_times - heartbeat times
-    '''
-    # Window for time of QRS shapes
-    win_qrs = int(0.010 *sr)
-    # Bandpass filter the recorded diaphragm
-    xs = esig.bwfilt(dia,sr,10,10000)
-    # Get QRS peak times
-    pulse = scipy.signal.find_peaks(xs,prominence=qrs_thresh*np.std(xs),distance=0.05*sr)[0]
-    # Create a copy of the smoothed diaphragm - may not be needed
-    y = xs.copy()
-    # Preallocate for all QRS shapes
-    QRS = np.zeros([2*win_qrs,len(pulse)])
-
-    # Get each QRS complex
-    for ii,pk in enumerate(pulse):
-        try:
-            QRS[:,ii] = xs[pk-win_qrs:pk+win_qrs]
-        except:
-            pass
-    # Replace each QRS complex with the average of ten nearby QRS
-    for ii,pk in enumerate(pulse):
-        if pk-win_qrs<0:
-            continue
-        if (pk+win_qrs)>len(xs):
-            continue
-        xs[pk-win_qrs:pk+win_qrs] -= np.nanmean(QRS[:,ii-5:ii+5],1)
-
-    pulse_times = pulse/sr
-
-    xs[np.isnan(xs)] = 0
-    xss = esig.bwfilt(xs,sr,1000,10000)
-
-    if method == 'med':
-        smooth_win = int(win* sr)
-        print('Integrating, this can take a while')
-        integrated = np.sqrt(scipy.signal.medfilt(xss**2,smooth_win+1))
-        print('Integrated!')
-    else:
-        smooth_win = scipy.signal.get_window(method,int(win * sr))
-        integrated = np.sqrt(scipy.signal.convolve(xss**2,smooth_win,'same'))/len(smooth_win)
-    return(integrated,pulse_times)
-
-
 def burst_stats_dia(integrated,sr,dia_thresh=1,rel_height=0.8):
     '''
     Calculate diaphragm burst features
@@ -553,6 +443,8 @@ def burst_stats_dia(integrated,sr,dia_thresh=1,rel_height=0.8):
     dia_data['pk_samp'] = pks
     dia_data['pk_time'] = pks/sr
     dia_data['postBI'] = np.hstack([lips_t[1:]-rips_t[:-1],[np.nan]])
+    dia_data = dia_data.eval('inst_freq=1/(duration_sec+postBI)')
+    dia_data = dia_data.eval('IBI=duration_sec+postBI')
 
     dia_df = pd.DataFrame(dia_data)
 
@@ -565,7 +457,7 @@ def events_in_epochs(evt,epoch_times,epoch_labels=None):
     Useful for labelling dataframes of onset events with things like "normoxia"
     :param evt:
     :param epoch_times: include 0
-    :param epoch_labels:
+    :param epoch_labels: list of strings to label each epoch
     :return:
     '''
     cat = np.zeros(len(evt))
@@ -593,243 +485,11 @@ def events_in_epochs(evt,epoch_times,epoch_labels=None):
     return(cat,labels)
 
 
-def jitter(data,l):
-    """
-    Jittering multidemntational logical data where
-    0 means no spikes in that time bin and 1 indicates a spike in that time bin.
-     Be sure to cite Xiaoxuan Jia https://github.com/jiaxx/jitter
-    """
-    if len(np.shape(data)) > 3:
-        flag = 1
-        sd = np.shape(data)
-        data = np.reshape(data, (
-        np.shape(data)[0], np.shape(data)[1], len(data.flatten()) / (np.shape(data)[0] * np.shape(data)[1])),
-                          order='F')
-    else:
-        flag = 0
-
-    psth = np.mean(data, axis=1)
-    length = np.shape(data)[0]
-
-    if np.mod(np.shape(data)[0], l):
-        data[length:(length + np.mod(-np.shape(data)[0], l)), :, :] = 0
-        psth[length:(length + np.mod(-np.shape(data)[0], l)), :] = 0
-
-    if len(np.shape(psth))>1 and np.shape(psth)[1] > 1:
-        dataj = np.squeeze(
-            np.sum(np.reshape(data, [l, np.shape(data)[0] // l, np.shape(data)[1], np.shape(data)[2]], order='F'),
-                   axis=0))
-        psthj = np.squeeze(
-            np.sum(np.reshape(psth, [l, np.shape(psth)[0] // l, np.shape(psth)[1]], order='F'), axis=0))
-    else:
-        dataj = np.sum(np.reshape(data, [l, np.shape(data)[0] // l, np.shape(data)[1]], order='F'),axis=0)
-        psthj = np.sum(np.reshape(psth, [l, np.shape(psth)[0] // l], order='F'),axis=0)
-
-    if np.shape(data)[0] == l:
-        dataj = np.reshape(dataj, [1, np.shape(dataj)[0], np.shape(dataj)[1]], order='F');
-        psthj = np.reshape(psthj, [1, np.shape(psthj[0])], order='F');
-
-    if len(np.shape(psthj))>1:
-        psthj = np.reshape(psthj, [np.shape(psthj)[0], 1, np.shape(psthj)[1]], order='F')
-    else:
-        psthj = np.reshape(psthj, [np.shape(psthj)[0], 1], order='F')
-
-    psthj[psthj == 0] = 10e-10
-
-    if len(np.shape(psthj))>2:
-        corr = dataj / np.tile(psthj, [1, np.shape(dataj)[1], 1]);
-        corr = np.reshape(corr, [1, np.shape(corr)[0], np.shape(corr)[1], np.shape(corr)[2]], order='F')
-        corr = np.tile(corr, [l, 1, 1, 1])
-        corr = np.reshape(corr, [np.shape(corr)[0] * np.shape(corr)[1], np.shape(corr)[2], np.shape(corr)[3]],
-                          order='F');
-        psth = np.reshape(psth, [np.shape(psth)[0], 1, np.shape(psth)[1]], order='F');
-        output = np.tile(psth, [1, np.shape(corr)[1], 1]) * corr
-
-        output = output[:length, :, :]
-    else:
-        corr = dataj / np.tile(psthj, [1, np.shape(dataj)[1]]);
-        corr = np.reshape(corr, [1, np.shape(corr)[0], np.shape(corr)[1]], order='F')
-        corr = np.tile(corr, [l, 1, 1])
-        corr = np.reshape(corr, [np.shape(corr)[0] * np.shape(corr)[1], np.shape(corr)[2],],
-                          order='F');
-        psth = np.reshape(psth, [np.shape(psth)[0], 1], order='F');
-        output = np.tile(psth, [1, np.shape(corr)[1]]) * corr
-
-        output = output[:length, :]
-
-
-    return output
-
-
-def xcorrfft(a,b,NFFT):
-    CCG = np.fft.fftshift(np.fft.ifft(np.multiply(np.fft.fft(a,NFFT), np.conj(np.fft.fft(b,NFFT)))))
-    return CCG
-
-
-def nextpow2(n):
-    """get the next power of 2 that's greater than n"""
-    m_f = np.log2(n)
-    m_i = np.ceil(m_f)
-    return 2**m_i
-
-
-def get_ccgjitter(spikes, FR, jitterwindow=25):
-    # spikes: neuron*ori*trial*time
-    assert np.shape(spikes)[0]==len(FR)
-
-    n_unit=np.shape(spikes)[0]
-    n_t = np.shape(spikes)[3]
-    # triangle function
-    t = np.arange(-(n_t-1),(n_t-1))
-    theta = n_t-np.abs(t)
-    del t
-    NFFT = int(nextpow2(2*n_t))
-    target = np.array([int(i) for i in NFFT/2+np.arange((-n_t+2),n_t)])
-
-    ccgjitter = []
-    rawccg = []
-    pair=0
-    for i in np.arange(n_unit-1): # V1 cell
-        for m in np.arange(i+1,n_unit):  # V2 cell
-            if FR[i]>2 and FR[m]>2:
-                temp1 = np.squeeze(spikes[i,:,:,:])
-                temp2 = np.squeeze(spikes[m,:,:,:])
-                FR1 = np.squeeze(np.mean(np.sum(temp1,axis=2), axis=1))
-                FR2 = np.squeeze(np.mean(np.sum(temp2,axis=2), axis=1))
-                tempccg = xcorrfft(temp1,temp2,NFFT)
-                tempccg = np.squeeze(np.nanmean(tempccg[:,:,target],axis=1))
-
-                temp1 = np.rollaxis(np.rollaxis(temp1,2,0), 2,1)
-                temp2 = np.rollaxis(np.rollaxis(temp2,2,0), 2,1)
-                ttemp1 = jitter(temp1,jitterwindow)
-                ttemp2 = jitter(temp2,jitterwindow)
-                tempjitter = xcorrfft(np.rollaxis(np.rollaxis(ttemp1,2,0), 2,1),np.rollaxis(np.rollaxis(ttemp2,2,0), 2,1),NFFT);
-                tempjitter = np.squeeze(np.nanmean(tempjitter[:,:,target],axis=1))
-                ccgjitter.append((tempccg - tempjitter).T/np.multiply(np.tile(np.sqrt(FR[i]*FR[m]), (len(target), 1)),
-                    np.tile(theta.T.reshape(len(theta),1),(1,len(FR1)))))
-
-    ccgjitter = np.array(ccgjitter)
-    return ccgjitter
-
-
-
-def jitter_NEB(data,l):
-    psth = np.mean(data, axis=1)
-    length = np.shape(data)[0]
-
-    if np.mod(np.shape(data)[0], l):
-        data[length:(length + np.mod(-np.shape(data)[0], l)), :] = 0
-        psth[length:(length + np.mod(-np.shape(data)[0], l))] = 0
-
-    # dataj = np.squeeze(np.sum(np.reshape(data,l,np.shape(data)[0] // l,np.shape(data)[1],order='F'),axis=0))
-    dataj = np.sum(np.reshape(data, [l, np.shape(data)[0] // l, np.shape(data)[1]], order='F'),axis=0)
-    psthj = np.sum(np.reshape(psth,[l,np.shape(psth)[0]//l],order='F'))
-
-    corr = dataj / np.tile(psthj, [1, np.shape(dataj)[1]]);
-    corr = np.reshape(corr, [1, np.shape(corr)[0], np.shape(corr)[1]], order='F')
-    corr = np.tile(corr,[l,1,1])
-    corr = np.reshape(corr,[np.shape(corr)[0]*np.shape(corr)[1],np.shape(corr)[2]],order='F')
-    psth = np.reshape(psth, [np.shape(psth)[0], 1, ], order='F');
-    output = np.tile(psth, [1, np.shape(corr)[1]]) * corr
-    output = output[:length, :]
-
-    return(output)
-
-
-def ccg_v2(ts,idx,events,max_time=1000,event_window=1):
-    '''
-
-    :param ts: all spikes
-    :param idx: cell ids of all spikes
-    :param events: any event, (usually breath on)
-    :param max_time:
-    :param event_window:
-    :return: ccg_out -
-    '''
-
-    jitterwindow=25
-
-    sub_ts = ts[ts<max_time]
-    events = events[events>5]
-    bt,cell_id,bins = bin_trains(ts,idx,max_time=max_time,binsize=0.001)
-    T,T_bins = models.raster2tensor(bt,bins,events,pre=event_window/2,post=event_window/2)
-    # triangle function
-    n_t = T.shape[0]
-    t = np.arange(-(n_t-1),(n_t-1))
-    theta = n_t-np.abs(t)
-    del t
-    NFFT = int(nextpow2(2*n_t))
-    target = np.array([int(i) for i in NFFT/2+np.arange((-n_t+2),n_t)])
-
-    FR = np.mean(bt,axis=1)*1000
-
-    n_unit = FR.shape[0]
-
-    ncomparisons = int((n_unit**2 - n_unit)/2)+1
-    # Preallocate for time
-    ccg_out = np.zeros([len(theta),ncomparisons])
-    raw_ccg = np.zeros_like(ccg_out)
-
-    # Calculate CCG for all cross correlations
-    count = -1
-    for ii in tqdm(np.arange(n_unit-1)): # V1 cell
-        t1 = T[:, ii, :]
-        for jj in np.arange(ii+1,n_unit):  # V2 cell
-            t2 = T[:, jj, :]
-            count+=1
-            if FR[ii]>2 and FR[jj]>2:
-
-
-                # ccg =np.mean(scipy.signal.fftconvolve(t1,t2),axis=1)
-
-                ccg = xcorrfft(t1,t2,NFFT)
-                ccg = np.squeeze(np.nanmean(ccg[:, target], axis=0))
-
-                tt1 = jitter(t1,jitterwindow)
-                tt2 = jitter(t2,jitterwindow)
-                tempjitter = xcorrfft(tt1,tt2,NFFT)
-                tempjitter = np.squeeze(np.nanmean(tempjitter[:, target], axis=0))
-                ccg_out[:,count] = (ccg - tempjitter) / np.multiply(np.sqrt(FR[ii] * FR[jj]), theta)
-                raw_ccg[:,count] = ccg / np.multiply(np.sqrt(FR[ii] * FR[jj]), theta)
-
-    return(ccg_out,raw_ccg)
-
-
-def get_ccg_peaks(corrected_ccg,thresh = 7):
-    '''
-    Assumes ccg is in milliseconds
-    :param corrected_ccg:
-    :return:
-    '''
-
-    centerpt = int(np.ceil(corrected_ccg.shape[0]/2))-1
-    chopped = corrected_ccg[centerpt-100:centerpt+100,:]
-
-    # Nan the middle 100ms to compute shoulder std
-    dum = chopped.copy()
-    dum[50:150] = np.nan
-    shoulder_std = np.nanstd(dum,axis=0)
-
-    # Look for peaks within 25ms
-    center_only = chopped[75:125,:]
-    compare_mat = np.tile(thresh*shoulder_std,[50,1])
-    exc_connx = np.where(np.any(np.greater(center_only,compare_mat),axis=0))[0]
-    inh_connx = np.where(np.any(np.less(center_only,-compare_mat),axis=0))[0]
-
-    rm = np.where(shoulder_std==0)
-
-    mask = np.logical_not(np.isin(exc_connx,rm))
-    exc_connx = exc_connx[mask]
-
-    mask = np.logical_not(np.isin(inh_connx,rm))
-    inh_connx = inh_connx[mask]
-
-    return(exc_connx,inh_connx)
-
-
 def compute_breath_type(breaths):
     '''
-    Requires the breaths dataframe.
+    Labels each breath as a 'eupnea','sigh', or 'apnea' based on the
+    rolling average.
+    Requires the breaths dataframe in the standard preprocessing
     :param breaths:
     :return:
     '''
@@ -847,9 +507,16 @@ def compute_breath_type(breaths):
     return temp
 
 
-def get_breaths(breaths,sr,analog):
-    t_pre = 0.2
-    t_post= 0.5
+def get_breaths(breaths,sr,analog,t_pre=0.2,t_post=0.5):
+    '''
+    Extracts the slice of analog data before and after each eupnea, apnea, and sigh
+    :param breaths: breaths dataframe
+    :param sr: sample rate (Hz)
+    :param analog: data to slice
+    :param t_pre: default= 0.2s
+    :param t_post: default = 0.5s
+    :return: eupnea, sigh, apnea, t
+    '''
     t_pre_samp = int(t_pre*sr)
     t_post_samp = int(t_post*sr)
     counts = breaths.groupby('type').count()['on_sec']
@@ -887,82 +554,6 @@ def get_breaths(breaths,sr,analog):
     return(eup,sigh,apnea,t)
 
 
-def calc_dia_phase(ons,offs=None,t_start=0,t_stop=None,dt=1/1000):
-    '''
-    Computes breathing phase based on the diaphragm
-    Phase is [0,1] where 0 is diaphragm onset, 0.5 is diaphragm offset, and 1 is diaphragm onset again,
-     - NB: Technically can generalize to any on/off signal, but standard usage should be diaphragm
-    :param ons: timestamps of diaphragm onsets (sec)
-    :param offs: timestamps of diaphragm offsets (sec). If no offs is given, linearly spaces onsets
-    :param t_start: start time of the phase trace (default=0)
-    :param t_stop: stop time of the phase trace (default is last stop value)
-    :param dt: time between timesteps(set to 1kHz)
-    :return:
-            phi - phase over time
-            t_phi - timestamps of the phase vector
-    '''
-    if t_stop is None:
-        t_stop = offs[-1]
-    if t_stop<t_start:
-        raise ValueError(f'Stop time: {t_stop}s cannot be less than start time: {t_start}s')
-
-    offs = offs[offs>t_start]
-    offs = offs[offs<=t_stop]
-
-    ons = ons[ons>=t_start]
-    ons = ons[:len(offs)]
-
-
-    assert(len(ons)==len(offs))
-    assert(np.all(np.greater(offs,ons)))
-
-    t_phi =np.arange(t_start,t_stop,dt)
-    phi = np.zeros_like(t_phi)
-
-    n_breaths = len(ons)
-
-    if offs is not None:
-        for ii in range(n_breaths-1):
-            on = ons[ii]
-            off = offs[ii]
-            next_on = ons[ii+1]
-            idx = np.searchsorted(t_phi,[on,off,next_on])
-            phi[idx[0]:idx[1]] = np.linspace(0,0.5,idx[1]-idx[0])
-            try:
-                phi[idx[1]:idx[2]] = np.linspace(0.5,1,idx[2]-idx[1])
-            except:
-                print([on,off,next_on])
-                print(idx)
-                print(ii)
-
-    else:
-        for ii in range(n_breaths-1):
-            on = ons[ii]
-            next_on = ons[ii+1]
-            idx = np.searchsorted(t_phi,[on,next_on])
-            phi[idx[0]:idx[1]] = np.linspace(0,1,idx[1]-idx[0])
-
-    return(t_phi,phi)
-
-
-def hist_tuning(x,x_t,st,bins=50):
-    '''
-    Get the normalized tuning curve for a non-angular
-    value
-    :param x: Covariate to tune to
-    :param x_t: the time stamps of x
-    :param st: spike times
-    :param bins: bins for the histogram
-    :return:
-    '''
-    prior,bins = np.histogram(x,bins=bins)
-    idx = np.searchsorted(x_t,st)
-    conditional,bins = np.histogram(x[idx],bins=bins)
-    posterior = conditional/prior
-
-    return(posterior,bins[1:])
-
-
 def get_sta(x,tvec,ts,win=0.5):
     '''
     Compute the spike triggered average, std, sem of a covariate x
@@ -996,9 +587,57 @@ def get_sta(x,tvec,ts,win=0.5):
 
     return(sta)
 
-def get_coherence(spikes,cell_id,x,xt,t0,tf):
-    #TODO: generalize
-    pass
+
+def get_coherence(ts,x,x_sr,t0,tf):
+    '''
+    Compute the coherence from spike times and an analog signal
+    :param ts: spiketimes (in s). Can be a quantity
+    :param x: the analog signal to compare against
+    :param x_sr: the sampling rate of the analog signal
+    :param t0: the first time to consider (in s). Can be a quantity
+    :param tf: the last time to consider (in s). Can be a quantity
+    :return:    coh - the maximum coherence
+                freqs - the frequencies that make up the coherence plot
+                sfc - the coherences at each frequency in freqs
+    '''
+    if type(t0) is not pq.quantity.Quantity:
+        t0 = t0*pq.s
+    if type(tf) is not pq.quantity.Quantity:
+        tf = tf*pq.s
+    if type(ts) is not pq.quantity.Quantity:
+        ts = ts*pq.s
+
+    ts = ts[ts<tf]
+    ts = ts[ts>t0]
+    spt = neo.SpikeTrain(ts,t_start = t0,t_stop=tf,units=pq.s)
+    sig = neo.AnalogSignal(x, units='V', sampling_rate=x_sr * pq.Hz,t_start=t0,t_stop=tf)
+    sfc, freqs = elephant.sta.spike_field_coherence(sig, spt, nperseg=8192)
+    coh = np.max(sfc.magnitude)
+
+    return(coh,sfc,freqs)
+
+
+
+def get_coherence_all(spikes,x,x_sr,t0,tf):
+    '''
+    wrapper to get_coherence to run on all cells in spikes
+    :param ts: spiketimes (in s). Can be a quantity
+    :param x: the analog signal to compare against
+    :param x_sr: the sampling rate of the analog signal
+    :param t0: the first time to consider (in s). Can be a quantity
+    :param tf: the last time to consider (in s). Can be a quantity
+    :return: coh_df - a dataframe with cell_id and maximum coherence
+    '''
+    coh = []
+    cells = []
+    for cell_id in tqdm(spikes['cell_id'].unique()):
+        ts = spikes.query('cell_id==@cell_id')['ts'].values
+        cc = get_coherence(ts,x,x_sr,t0,tf)[0]
+        coh.append(cc)
+        cells.append(cell_id)
+    coh_df = pd.DataFrame()
+    coh_df['cell_id'] = cells
+    coh_df['coherence'] = coh
 
 
 def event_average_mod_depth(spikes,events,pre=0.25,post=0.5,method='sqrt'):
@@ -1014,10 +653,10 @@ def event_average_mod_depth(spikes,events,pre=0.25,post=0.5,method='sqrt'):
     :param events: the events to time lock to and average
     :param pre: [seconds] the window prior to the event to consider (default =0.25)
     :param post: [seconds] the window after the event to consider (default=0.5)
-    :return:
+    :return: dataframe of cell_id vs modulation depth
     '''
     raster,cell_id,bins = bin_trains(spikes.ts,spikes.cell_id,max_time=events[-1],binsize=.015)
-    TT_eup,raster_bins = models.raster2tensor(raster,bins,events,pre=pre,post=post)
+    TT_eup,raster_bins = raster2tensor(raster,bins,events,pre=pre,post=post)
     raster_bins = raster_bins[1:]-(raster_bins[1]-raster_bins[0])/2
     mean_eup = np.mean(TT_eup,2)
     if method=='sqrt':
@@ -1084,6 +723,37 @@ def get_binned_event_rate(evt,dt,start_time=0,stop_time=None,method='hist'):
     return(t_vec,rate)
 
 
+def raster2tensor(raster,raster_bins,events,pre = .100,post = .200):
+    '''
+    Given the binned spikerates over time and a series of events,
+    creates a tensor that is shape [n_bins_per_trial,n_cells,n_trials]
+
+    :param raster: a [time x neurons] array of spike rates
+    :param raster_bins: array of times in seconds for each bin ( first dim of raster)
+    :param events: array of times in seconds at which each event started
+    :param pre: float, amount of time prior to event onset to consider a trial(positive, seconds)
+    :param post: float, amount of time after event onset to consider a trial (positive, seconds)
+    :return:
+        raster_T    - [time x cells x trials] tensor of spike rates for each trial (event)
+        bins        - array of values in seconds that describes the first dimension of raster_T
+    '''
+    dt = np.round(np.mean(np.diff(raster_bins)),5)
+    trial_length = int(np.round((pre+post)/dt))
+    keep_events = events>(raster_bins[0]-pre)
+    events = events[keep_events]
+    keep_events = events<(raster_bins[-1]-post)
+    events = events[keep_events]
+
+    raster_T = np.empty([trial_length,raster.shape[0],len(events)])
+
+    for ii,evt in enumerate(events):
+        t0 = evt-pre
+        t1 = evt+post
+        bin_lims = np.searchsorted(raster_bins,[t0,t1])
+        xx = raster[:,bin_lims[0]:bin_lims[0]+trial_length].T
+        raster_T[:,:,ii]= xx
+    bins = np.arange(-pre,post,dt)
+    return(raster_T,bins)
 
 
 
