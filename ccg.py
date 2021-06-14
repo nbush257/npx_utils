@@ -122,31 +122,7 @@ def get_ccgjitter(spikes, FR, jitterwindow=25):
     return ccgjitter
 
 
-
-def jitter_NEB(data,l):
-    psth = np.mean(data, axis=1)
-    length = np.shape(data)[0]
-
-    if np.mod(np.shape(data)[0], l):
-        data[length:(length + np.mod(-np.shape(data)[0], l)), :] = 0
-        psth[length:(length + np.mod(-np.shape(data)[0], l))] = 0
-
-    # dataj = np.squeeze(np.sum(np.reshape(data,l,np.shape(data)[0] // l,np.shape(data)[1],order='F'),axis=0))
-    dataj = np.sum(np.reshape(data, [l, np.shape(data)[0] // l, np.shape(data)[1]], order='F'),axis=0)
-    psthj = np.sum(np.reshape(psth,[l,np.shape(psth)[0]//l],order='F'))
-
-    corr = dataj / np.tile(psthj, [1, np.shape(dataj)[1]])
-    corr = np.reshape(corr, [1, np.shape(corr)[0], np.shape(corr)[1]], order='F')
-    corr = np.tile(corr,[l,1,1])
-    corr = np.reshape(corr,[np.shape(corr)[0]*np.shape(corr)[1],np.shape(corr)[2]],order='F')
-    psth = np.reshape(psth, [np.shape(psth)[0], 1, ], order='F')
-    output = np.tile(psth, [1, np.shape(corr)[1]]) * corr
-    output = output[:length, :]
-
-    return(output)
-
-
-def ccg_v2(ts,idx,events,max_time=1000,event_window=1):
+def compute_ccg(ts,idx,events,max_time=1000,event_window=2,shape='mat'):
     '''
 
     :param ts: all spikes
@@ -154,6 +130,7 @@ def ccg_v2(ts,idx,events,max_time=1000,event_window=1):
     :param events: any event, (usually breath on)
     :param max_time:
     :param event_window:
+    :param shape:'mat' or 'ravel' - mat gives an array [t,presynaptic, post synaptic]. ravel gives a matric: [t, comparison id]
     :return: ccg_out -
     '''
 
@@ -177,14 +154,21 @@ def ccg_v2(ts,idx,events,max_time=1000,event_window=1):
 
     ncomparisons = int((n_unit**2 - n_unit)/2)+1
     # Preallocate for time
-    ccg_out = np.zeros([len(theta),ncomparisons])
-    raw_ccg = np.zeros_like(ccg_out)
+    if shape =='ravel':
+        ccg_out = np.zeros([len(theta),ncomparisons])
+    elif shape == 'mat':
+        ccg_out = np.zeros([len(theta),n_unit,n_unit])
+        raw_ccg = np.zeros_like(ccg_out)
 
     # Calculate CCG for all cross correlations
     count = -1
+    pre_synaptic = []
+    post_synaptic =[]
     for ii in tqdm(np.arange(n_unit-1)): # V1 cell
         t1 = T[:, ii, :]
         for jj in np.arange(ii+1,n_unit):  # V2 cell
+            pre_synaptic.append(cell_id[ii])
+            post_synaptic.append(cell_id[jj])
             t2 = T[:, jj, :]
             count+=1
             if FR[ii]>2 and FR[jj]>2:
@@ -199,40 +183,112 @@ def ccg_v2(ts,idx,events,max_time=1000,event_window=1):
                 tt2 = jitter(t2,jitterwindow)
                 tempjitter = xcorrfft(tt1,tt2,NFFT)
                 tempjitter = np.squeeze(np.nanmean(tempjitter[:, target], axis=0))
-                ccg_out[:,count] = (ccg - tempjitter) / np.multiply(np.sqrt(FR[ii] * FR[jj]), theta)
-                raw_ccg[:,count] = ccg / np.multiply(np.sqrt(FR[ii] * FR[jj]), theta)
+                if shape == 'mat':
+                    ccg_out[:, ii, jj] = (ccg - tempjitter) / np.multiply(np.sqrt(FR[ii] * FR[jj]), theta)
+                    raw_ccg[:,ii,jj] = ccg / np.multiply(np.sqrt(FR[ii] * FR[jj]), theta)
+                elif shape == 'ravel':
+                    ccg_out[:,count] = (ccg - tempjitter) / np.multiply(np.sqrt(FR[ii] * FR[jj]), theta)
+                    raw_ccg[:,count] = ccg / np.multiply(np.sqrt(FR[ii] * FR[jj]), theta)
 
-    return(ccg_out,raw_ccg)
+    pre_synaptic = np.array(pre_synaptic)
+    post_synaptic = np.array(post_synaptic)
+    return(ccg_out,raw_ccg,pre_synaptic,post_synaptic)
 
 
-def get_ccg_peaks(corrected_ccg,thresh = 7):
+def get_ccg_peaks(corrected_ccg,thresh = 7,shape='mat'):
     '''
     Assumes ccg is in milliseconds
     :param corrected_ccg:
     :return:
     '''
 
-    centerpt = int(np.ceil(corrected_ccg.shape[0]/2))-1
-    chopped = corrected_ccg[centerpt-100:centerpt+100,:]
+    if shape == 'ravel':
+        centerpt = int(np.ceil(corrected_ccg.shape[0]/2))-1
+        corrected_ccg[centerpt,:] = 0
+        chopped = corrected_ccg[centerpt-100:centerpt+100,:]
 
-    # Nan the middle 100ms to compute shoulder std
-    dum = chopped.copy()
-    dum[50:150] = np.nan
-    shoulder_std = np.nanstd(dum,axis=0)
+        # Nan the middle 100ms to compute shoulder std
+        dum = chopped.copy()
+        dum[50:150] = np.nan
+        shoulder_std = np.nanstd(dum,axis=0)
 
-    # Look for peaks within 25ms
-    center_only = chopped[75:125,:]
-    compare_mat = np.tile(thresh*shoulder_std,[50,1])
-    exc_connx = np.where(np.any(np.greater(center_only,compare_mat),axis=0))[0]
-    inh_connx = np.where(np.any(np.less(center_only,-compare_mat),axis=0))[0]
+        # Look for peaks within 25ms
+        center_only = chopped[75:125,:]
+        compare_mat = np.tile(thresh*shoulder_std,[50,1])
+        exc_connx = np.where(np.any(np.greater(center_only,compare_mat),axis=0))[0]
+        inh_connx = np.where(np.any(np.less(center_only,-compare_mat),axis=0))[0]
 
-    rm = np.where(shoulder_std==0)
+        rm = np.where(shoulder_std==0)
 
-    mask = np.logical_not(np.isin(exc_connx,rm))
-    exc_connx = exc_connx[mask]
+        mask = np.logical_not(np.isin(exc_connx,rm))
+        exc_connx = exc_connx[mask]
 
-    mask = np.logical_not(np.isin(inh_connx,rm))
-    inh_connx = inh_connx[mask]
+        mask = np.logical_not(np.isin(inh_connx,rm))
+        inh_connx = inh_connx[mask]
+    elif shape == 'mat':
+        centerpt = int(np.ceil(corrected_ccg.shape[0]/2))-1
+        corrected_ccg[centerpt,:,:] = 0
+        chopped = corrected_ccg[centerpt-100:centerpt+100,:,:]
+
+        # Nan the middle 100ms to compute shoulder std
+        dum = chopped.copy()
+        dum[50:150,:,:] = np.nan
+        shoulder_std = np.nanstd(dum,axis=0)
+
+        # Look for peaks within 25ms
+        center_only = chopped[75:125,:,:]
+        compare_mat = np.tile(thresh*shoulder_std,[50,1,1])
+        exc_connx = np.any(np.greater(center_only,compare_mat),axis=0)
+        inh_connx = np.any(np.less(center_only,-compare_mat),axis=0)
+
+        rm = shoulder_std==0
+
+        mask = np.logical_not(rm)
+
+        exc_connx = exc_connx*mask
+        inh_connx = inh_connx*mask
+
 
     return(exc_connx,inh_connx)
+
+def to_graph(exc_connx,inh_connx):
+
+    exc_connx = exc_connx.astype('int')
+    inh_connx = -1*inh_connx.astype('int')
+
+    test_double_count = exc_connx-inh_connx
+    if np.any(np.abs(test_double_count)>1):
+        print('MAJOR PROBLEMS! Counted a connectino as both inhibitory and excitatory')
+
+
+    graph = exc_connx+inh_connx
+    return(graph)
+
+def to_delay_graph(graph,ccg):
+    delay_graph = np.zeros_like(graph)
+    centerpt = int(np.ceil(ccg.shape[0] / 2)) - 1
+    connect_graph = np.abs(graph)
+    cc1,cc2 = np.where(connect_graph)
+    for c1,c2 in zip(cc1,cc2):
+        this_ccg = ccg[:,c1,c2]
+        lag = np.argmax(this_ccg)-centerpt
+        delay_graph[c1,c2] = lag
+        delay_graph[c2,c1] = -lag
+    return(delay_graph)
+
+
+
+
+def extract_ccg(graph,ccg):
+    connect_graph = np.abs(graph)
+    cc1,cc2 = np.where(connect_graph)
+    ccg_examples = []
+    centerpt = int(np.ceil(ccg.shape[0] / 2)) - 1
+    for c1,c2 in zip(cc1,cc2):
+        this_ccg = ccg[:,c1,c2]
+        ccg_examples.append(this_ccg)
+    tvec = np.arange(this_ccg.shape[0])-centerpt
+    return(ccg_examples,tvec)
+
+
 

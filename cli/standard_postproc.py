@@ -435,12 +435,6 @@ def get_opto_data(ks2_dir,stim_len):
     return(opto_time,opto_fn,stim_len)
 
 
-def run_ccg_connectivity(spikes,breath_on,max_time):
-    # TODO - get mapping of ccg_index to cell comparison
-        ccg_out,raw_ccg = proc.ccg_v2(spikes['ts'],spikes['cell_id'],breath_on,max_time)
-        exc_connx,inh_connx = proc.get_ccg_peaks(ccg_out)
-
-
 def plot_waterfall(spikes,breaths,max_time,mod_thresh=0.2,waterfall_color='tab:purple',figsize=(3,10)):
     raster,cell_id,bins = proc.bin_trains(spikes.ts,spikes.cell_id,max_time=max_time,binsize=.015)
     burst_dur = breaths['duration_sec'].mean()
