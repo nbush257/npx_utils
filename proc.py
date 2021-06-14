@@ -443,10 +443,11 @@ def burst_stats_dia(integrated,sr,dia_thresh=1,rel_height=0.8):
     dia_data['pk_samp'] = pks
     dia_data['pk_time'] = pks/sr
     dia_data['postBI'] = np.hstack([lips_t[1:]-rips_t[:-1],[np.nan]])
-    dia_data = dia_data.eval('inst_freq=1/(duration_sec+postBI)')
-    dia_data = dia_data.eval('IBI=duration_sec+postBI')
-
     dia_df = pd.DataFrame(dia_data)
+    dia_df = dia_df.eval('inst_freq=1/(duration_sec+postBI)')
+    dia_df = dia_df.eval('IBI=duration_sec+postBI')
+
+
 
     return(dia_df)
 
