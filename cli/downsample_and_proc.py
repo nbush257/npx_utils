@@ -91,8 +91,7 @@ def remove_EKG(x,sr,thresh=2):
 
     ww = int(.0005 * sr)
     ww += ww % 2 - 1
-    if ww<3:
-        ww=3
+
     for ii,pk in enumerate(pks):
         if pk-win<0:
             continue
@@ -181,10 +180,8 @@ def filt_int_ds_dia(x,sr,ds_factor=10):
 
 
     # Filter for high frequency signal
-    if sr<5000:
-        sos = sig.butter(2, [300 / sr / 2], btype='highpass', output='sos')
-    else:
-        sos = sig.butter(2,[300/sr/2,5000/sr/2],btype='bandpass',output='sos')
+
+    sos = sig.butter(2,[300/sr/2,5000/sr/2],btype='bandpass',output='sos')
     dia_filt = sig.sosfilt(sos,dia_filt)
 
     # Use medfilt to get the smoothed rectified EMG

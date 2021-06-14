@@ -174,11 +174,13 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
     cmap = cm.copper(np.linspace(0, 1, len(epoch_t)))
     KL = []
 
-
-    sig = neo.AnalogSignal(aux['dia'], units='V', sampling_rate=aux['sr'] * pq.Hz)
-    n_train = neo.SpikeTrain(ts[ts<epoch_t[-1]], t_stop=epoch_t[-1] * pq.s, units=pq.s)
-    sfc, freqs = elephant.sta.spike_field_coherence(sig, n_train, nperseg=8192)
-    COH = np.max(sfc.magnitude)
+    #
+    # sig = neo.AnalogSignal(aux['dia'], units='V', sampling_rate=aux['sr'] * pq.Hz)
+    # n_train = neo.SpikeTrain(ts[ts<epoch_t[-1]], t_stop=epoch_t[-1] * pq.s, units=pq.s)
+    # sfc, freqs = elephant.sta.spike_field_coherence(sig, n_train, nperseg=8192)
+    #
+    COH = proc.get_coherence(ts,aux['dia'],aux['sr'],t0=0,tf=epoch_t[-1])[0]
+    # COH = np.max(sfc.magnitude)
 
     for ii, (t0, tf) in enumerate(zip(epochs_t0, epochs_tf)):
         sub_spikes = ts[ts > t0]
@@ -195,8 +197,8 @@ def plot_single_cell_summary(spikes, neuron_id, epoch_t, dia_df, phi, sr, opto_t
         btrain[sp_idx] = 1
         rr, theta_k, theta, L_dir = proc.angular_response_hist(phi_slice, btrain, 100)
         theta_k = theta_k[:-1]+np.diff(theta_k)[0]
-        kl = proc.compute_KL(phi_slice,btrain,25)
-        KL.append(kl)
+        # kl = proc.compute_KL(phi_slice,btrain,25)
+        # KL.append(kl)
         ax0.plot(theta_k, rr * sr, color=cmap[ii])
 
 
@@ -613,10 +615,8 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
         TAG_RASTER.append(tag_raster)
 
     # Get coherence to diaphragm
-        n_train = neo.SpikeTrain(spt,t_stop=max_time*pq.s,units=pq.s)
-        sig = neo.AnalogSignal(aux['dia'],units='V',sampling_rate=aux['sr']*pq.Hz)
-        sfc,freqs = elephant.sta.spike_field_coherence(sig,n_train,nperseg=8192)
-        COH.append(np.max(sfc.magnitude))
+        coh = proc.get_coherence(all_spt,aux['dia'],aux['sr'],0,max_time)[0]
+        COH.append(coh)
 
         # Get phase tuning over time
         nid = prefix+f'_c{cell_id:03.0f}'
