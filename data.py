@@ -416,6 +416,11 @@ def load_aux(ks_dir,t=0):
     aux_dat['sr'] = sr
     breaths = breaths.reset_index().drop('Var1',axis=1)
 
+    # For compatibility with changed burst_stats_dia versions.
+    if 'IBI' not in breaths.columns:
+        breaths = breaths.eval('IBI=duration_sec+postBI')
+        breaths = breaths.eval('inst_freq=1/IBI')
+
     return(epochs,breaths,aux_dat)
 
 

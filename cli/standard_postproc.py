@@ -484,7 +484,7 @@ def plot_waterfall(spikes,breaths,max_time,mod_thresh=0.2,waterfall_color='tab:p
 @click.option('--t_max',default=1501)
 @click.option('--stim_len',default=10)
 def main(ks2_dir,t_max,stim_len,p_save=None):
-    run_tensor=True
+    run_tensor=False
 
     # (DONE) Plot long time-scale raster of all neurons with respiratory rate
     # (DONE) Plot short timescale raster of all neurons with pleth and dia integrated
@@ -504,6 +504,7 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
 
     # NEEDS: ks2dir,ni_binary, epoch times + labels, channels
 
+    plt.style.use('seaborn-paper')
     # ========================= #
     #  LOAD DATA #
     # ========================= #
@@ -526,17 +527,18 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
         pass
 
 
-    mouse_id = re.search('m\d\d\d\d-\d\d',ks2_dir).group()
-    gate_id = int(re.search('_g\d_',ks2_dir).group()[2])
-    probe_id = int(re.search('imec\d',ks2_dir).group()[-1])
-    prefix = f'{mouse_id}_g{gate_id}_imec{probe_id}'
+    meta = data.parse_dir(ks2_dir)
+    mouse_id = meta['mouse_id']
+    gate_id= meta['gate']
+    probe_id = meta['probe']
+
+    prefix = f'{mouse_id}_g{gate_id}_{probe_id}'
     print('='*100)
     print(f'run identifier is: {prefix}')
 
-    plt.style.use('seaborn-paper')
+    # ============================ #
+    # Load auxiliary data
     epochs,breaths,aux = data.load_aux(ks2_dir)
-    breaths = breaths.eval('IBI=duration_sec+postBI')
-    breaths = breaths.eval('inst_freq=1/IBI')
     max_time = np.min([aux['t'][-1],t_max])
     print(f'Max time is: {max_time:0.1f}s or {max_time/60:0.0f}m')
     breaths = proc.compute_breath_type(breaths) # classify sighs, apneas
@@ -544,8 +546,6 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
     phi = proc.calc_dia_phase(breaths['on_sec'].values,breaths['off_sec'].values,dt=1/aux['sr'],t_stop=max_time)[1]
     phi = transform_phase(phi)
     opto_time,opto_fn,stim_len = get_opto_data(ks2_dir,stim_len)
-
-
 
 
     # =============================== #
@@ -560,7 +560,6 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
     viz.plot_raster_example(spikes,aux['sr'],aux['pleth'],aux['dia'],raster_plot_start,5)
     plt.savefig(os.path.join(p_results,f'{prefix}_example_raster_short.png'),dpi=150)
     plt.close('all')
-
 
 
     # =============================== #
@@ -614,7 +613,7 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
         TAGGED.append(tagged)
         TAG_RASTER.append(tag_raster)
 
-    # Get coherence to diaphragm
+        # Get coherence to diaphragm
         coh = proc.get_coherence(all_spt,aux['dia'],aux['sr'],0,max_time)[0]
         COH.append(coh)
 
