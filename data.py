@@ -16,12 +16,11 @@ from pathlib import Path
 sys.path.append('../')
 sys.path.append('/active/ramirez_j/ramirezlab/nbush/projects')
 from utils.ephys.signal import binary_onsets
-import utils.burst as burst
-import utils.brian_utils.postproc as bup
 from spykes.plot import NeuroVis,PopVis
 from tqdm import tqdm
 import scipy.io.matlab as sio
 import re
+import quantities as pq
 
 
 def spike_times_npy_to_sec(sp_fullPath, sample_rate = 0, bNPY = True):
@@ -116,6 +115,11 @@ def get_tvec(x_sync,sync_timestamps,sr):
 
 
 def get_sr(ni_bin_fn):
+    '''
+    Conveneience function to the the sample rate from a nidaq bin file
+    :param ni_bin_fn:
+    :return:
+    '''
     meta = readSGLX.readMeta(Path(ni_bin_fn))
     sr = readSGLX.SampRate(meta)
     return(sr)
@@ -123,7 +127,7 @@ def get_sr(ni_bin_fn):
 
 def get_ni_analog(ni_bin_fn, chan_id):
     '''
-    Convinience function to load in a NI analog channel
+    Convenience function to load in a NI analog channel
     :param ni_bin_fn: filename to load from
     :param chan_id: channel index to load
     :return: analog_dat
@@ -134,6 +138,39 @@ def get_ni_analog(ni_bin_fn, chan_id):
     analog_dat = ni_dat[chan_id]*bitvolts
 
     return(analog_dat)
+
+
+
+def get_ni_bin_from_ks_dir(ks_dir,search_p = None):
+    '''
+    Load the binary auxiliarry data associeated with an imec recording
+    Similar to get_ni_analog, but uses the kilosort directory as input
+    :param ks_dir:
+    :param search_p:
+    :return:
+    '''
+    sess_spec = parse_dir(ks_dir)
+
+    if search_p is None:
+        if os.sys.platform == 'linux':
+            search_p = '/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/raw'
+        else:
+            search_p = 'Y:/projects/dynaresp/data/raw'
+
+
+
+    ni_bin_list = glob.glob(f'{search_p}/{sess_spec["mouse_id"]}/{sess_spec["mouse_id"]}_g{sess_spec["gate"]}/*nidq.bin')
+
+    if len(ni_bin_list) >1:
+        print('More than one trigger found, looking in processed for a concatenated nidaq file')
+        if os.sys.platform == 'linux':
+            search_p = '/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed'
+        else:
+            search_p = 'Y:/projects/dynaresp/data/processed'
+        ni_bin_list = glob.glob(f'{search_p}/{sess_spec["mouse_id"]}/*{sess_spec["mouse_id"]}_g{sess_spec["gate"]}/*tcat*nidq.bin')
+    ni_bin_fn = ni_bin_list[0]
+
+    return(ni_bin_fn)
 
 
 def get_concatenated_spikes(ks_dir, use_label='intersect'):
@@ -247,6 +284,7 @@ def filter_default_metrics(spikes,metrics):
 
     return(spikes)
 
+
 def resort_by_depth(spikes):
     '''
     changes the cell_id column to be depth ordered, 0 indexed, and sequential
@@ -264,9 +302,11 @@ def resort_by_depth(spikes):
 
     return(spikes)
 
+
 def load_filtered_spikes(ks2_dir,use_filters=True):
     '''
     Convinience function to load the standard qc controlled spikes
+    and map cell_id to the depth order
     :param ks2_dir:
     :return:
     '''
@@ -275,17 +315,6 @@ def load_filtered_spikes(ks2_dir,use_filters=True):
         spikes = filter_default_metrics(spikes,metrics)
     spikes = resort_by_depth(spikes)
     return(spikes,metrics)
-
-def create_neo_trains(ks2_dir):
-   cat_spikes = get_concatenated_spikes(ks2_dir)
-   train_list = []
-   max_time = cat_spikes['ts'].max()
-   for ii in np.unique(cat_spikes.cell_id):
-       ts = cat_spikes[cat_spikes.cell_id==ii]['ts'].values * pq.second
-       dum = neo.spiketrain.SpikeTrain(ts,max_time)
-       train_list.append(dum)
-
-   return(train_list)
 
 
 def create_spykes_pop(spikes,start_time=0,stop_time=np.inf):
@@ -315,6 +344,15 @@ def create_spykes_pop(spikes,start_time=0,stop_time=np.inf):
 
 
 def get_event_triggered_st(ts,events,idx,pre_win,post_win):
+    '''
+    Probably deprecated; Better to use Pavan's spykes code
+    :param ts:
+    :param events:
+    :param idx:
+    :param pre_win:
+    :param post_win:
+    :return:
+    '''
     print('Calculating Time D')
     D = ts-events[:,np.newaxis]
     mask = np.logical_or(D<-pre_win,D>post_win)
@@ -335,8 +373,8 @@ def get_event_triggered_st(ts,events,idx,pre_win,post_win):
 def load_aux(ks_dir,t=0):
     '''
     loads in the standard auxiliarry data from the neuropixel exp[eriments
-    :param ks_dir:
-    :param t:
+    :param ks_dir: directory of the sorted data
+    :param t: The trial index
     :return: epochs,breaths,aux_dat
     '''
 
@@ -415,43 +453,61 @@ def get_opto_df(raw_opto,v_thresh,ni_sr,min_dur=0.001,max_dur=10):
 
 
 def parse_dir(ks_dir):
+    '''
+    Convecience function to parse the kilosort directory
+    into a dict with mouse, gate, and probe fields
+    :param ks_dir:
+    :return: meta
+    '''
     mouse_id = re.search('m\d\d\d\d-\d\d',ks_dir).group()
     gate = int(re.search('g\d',ks_dir).group()[1:])
     probe = re.search('imec\d',ks_dir).group()
-    dd = {}
-    dd['mouse_id'] = mouse_id
-    dd['gate'] = gate
-    dd['probe'] = probe
-    return(dd)
+    meta = {}
+    meta['mouse_id'] = mouse_id
+    meta['gate'] = gate
+    meta['probe'] = probe
+    return(meta)
 
 
-def get_ni_bin_from_ks_dir(ks_dir,search_p = None):
-    sess_spec = parse_dir(ks_dir)
+def spikes2neo_trains(spikes,cell_id= None,t0=0,t_stop=None,out='dict'):
 
-    if search_p is None:
-        if os.sys.platform == 'linux':
-            search_p = '/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/raw'
-        else:
-            search_p = 'Y:/projects/dynaresp/data/raw'
+    all_cells = spikes['cell_id'].unique()
+    if cell_id is None:
+        cell_id = all_cells
+    if type(cell_id) is int:
+        cell_id = [cell_id]
+    for ii in cell_id:
+        if ii not in all_cells:
+            raise(ValueError(f'Cell {ii} is not in Spikes'))
+    if t_stop is None:
+        t_stop = spikes['ts'].max()*pq.s
+    elif type(t_stop) is not pq.Quantity:
+        t_stop = t_stop*pq.s
 
+    if type(t0) is not pq.Quantity:
+        t0 = t0*pq.s
 
+    train_dict = {}
+    train_list = []
 
-    ni_bin_list = glob.glob(f'{search_p}/{sess_spec["mouse_id"]}/{sess_spec["mouse_id"]}_g{sess_spec["gate"]}/*nidq.bin')
+    for ii in cell_id:
+        sub_spikes = spikes.query('cell_id==@ii')
+        ts = sub_spikes['ts'].values*pq.s
+        clu_id = sub_spikes['cluster_id'].values[0]
+        depth = sub_spikes['depth'].values[0]
 
-    if len(ni_bin_list) >1:
-        print('More than one trigger found, looking in processed for a concatenated nidaq file')
-        if os.sys.platform == 'linux':
-            search_p = '/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed'
-        else:
-            search_p = 'Y:/projects/dynaresp/data/processed'
-        ni_bin_list = glob.glob(f'{search_p}/{sess_spec["mouse_id"]}/*{sess_spec["mouse_id"]}_g{sess_spec["gate"]}/*tcat*nidq.bin')
-    ni_bin_fn = ni_bin_list[0]
+        ts = ts[ts<t_stop]
+        ts = ts[ts>t0]
+        train = neo.SpikeTrain(ts,t_stop,t_start=t0,name=ii,description=f'clu_id={clu_id},depth={depth}')
+        train_dict[ii]= train
+        train_list.append(train)
 
-    return(ni_bin_fn)
-
-
-def spikes2neo_trains():
-    pass
+    if out=='dict':
+        return(train_dict)
+    elif out=='list':
+        return(train_list)
+    else:
+        return(0)
 
 
 
