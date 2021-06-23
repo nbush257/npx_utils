@@ -284,10 +284,10 @@ def extract_ccg(graph,ccg):
     cc1,cc2 = np.where(connect_graph)
     ccg_examples = []
     centerpt = int(np.ceil(ccg.shape[0] / 2)) - 1
+    tvec = np.arange(ccg.shape[0]) - centerpt
     for c1,c2 in zip(cc1,cc2):
         this_ccg = ccg[:,c1,c2]
         ccg_examples.append(this_ccg)
-    tvec = np.arange(this_ccg.shape[0])-centerpt
     return(ccg_examples,tvec)
 
 

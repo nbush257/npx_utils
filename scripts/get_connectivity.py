@@ -1,9 +1,10 @@
+import sys
+sys.path.append('../')
 import data
-import proc
+import ccg
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.io.matlab as sio
-import ccg
 import glob
 import os
 import pandas as pd
@@ -85,22 +86,30 @@ def plot_connectivity_summary(ccg_adj,p_save,prefix,spikes,thresh=7):
 @click.command()
 @click.argument('gate_dir')
 @click.option('--tf',default=1200)
-def main(gate_dir,tf):
+@click.option('--thresh',default=7)
+@click.option('--debug',is_flag=True)
+def main(gate_dir,tf,thresh,debug):
     print('loading spikes...')
     spikes,ks_dirs = load_all_probes(gate_dir)
     print('loading auxiliary data...')
     epochs,breaths,aux_data = data.load_aux(ks_dirs[0])
     print('computing ccg...')
-    debug=False
+
+    # String ops
     dt = datetime.datetime.now()
     date_str = f'{dt.year}-{dt.month:02.0f}-{dt.day:02.0f}'
     p_save = f'/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/results/{date_str}_connectivity'
     meta = data.parse_dir(ks_dirs[0])
     prefix = f'{meta["mouse_id"]}_g{meta["gate"]}'
 
-    if ~os.path.isdir(p_save):
+    # make save directory
+    try:
         os.makedirs(p_save)
+    except:
+        pass
+
     if debug:
+        print('Running debug version...')
         ss = spikes.query('unique_id<60')
         ccg_adj,ccg_raw,pre_synaptic,post_synaptic = ccg.compute_ccg(ss['ts'].values,ss['unique_id'].values,
                                                                      breaths['on_sec'].values,
@@ -117,9 +126,15 @@ def main(gate_dir,tf):
                                                                      shape='mat')
 
 
-    data_out = plot_connectivity_summary(ccg_adj,p_save,prefix,spikes,thresh=7)
-    sio.savemat(os.path.join(p_save,'connectivity_data.mat'),data_out)
+    data_out = plot_connectivity_summary(ccg_adj,p_save,prefix,spikes,thresh=thresh)
+    data_out['ccg_adj'] = ccg_adj
+    data_out['raw_ccg'] = ccg_raw
+    data_out['presynaptic'] = pre_synaptic
+    data_out['postsynaptic'] = post_synaptic
+    sio.savemat(os.path.join(p_save,f'{prefix}_connectivity_data.mat'),data_out)
 
 
+if __name__=='__main__':
+    main()
 
 

@@ -3,11 +3,14 @@ import seaborn as sns
 from spykes.plot import NeuroVis
 import numpy as np
 import matplotlib.pyplot as plt
-# from . import proc
-import proc
+try:
+    from npx_utils import proc
+    from npx_utils import models
+except:
+    import proc
+    import models
 import matplotlib.cm as cm
 import pandas as pd
-import models
 
 def spykes_raster(raster):
     tt = np.arange(raster['window'][0],raster['window'][1],raster['binsize'])
@@ -223,7 +226,7 @@ def plot_raster_summary(spikes,phys_df):
     return(f,[ax1,ax2,ax3])
 
 
-def plot_raster_example(spikes,sr,pleth,dia_int,t0,win=10,events=None):
+def plot_raster_example(spikes,sr,pleth,dia_int,t0,win=10,events=None,pointsize=4):
     '''
     Plots the spike raster for [t0,t0+win]. Include the pleth and diaphragm traces.
     :param spikes: (DataFrame) spikes dataframe (columns are ts, cell_id)
@@ -255,7 +258,7 @@ def plot_raster_example(spikes,sr,pleth,dia_int,t0,win=10,events=None):
     # Set up the figure
     f = plt.figure(figsize=(4,5))
     # Plot the spike times as dots
-    plt.plot(sub_spikes.ts,sub_spikes.depth,'k.',alpha=0.3,mew=0,ms=3)
+    plt.plot(sub_spikes.ts,sub_spikes.depth,'k.',alpha=0.3,mew=0,ms=pointsize)
 
     # Plot the aux data - does some scaling to include everything in the same plot
     plt.plot(sub_tvec,dia_sub-(0.1*ymax),lw=0.5,color='tab:green')
@@ -264,9 +267,9 @@ def plot_raster_example(spikes,sr,pleth,dia_int,t0,win=10,events=None):
 
     # Plot the scale bars
     ymin = np.min(pleth_sub)-(0.2*ymax)
-    plt.hlines(ymin,t0,(t0+win/25))
-    plt.text(t0,ymin-(0.01*ymax),f'{win/10}s',fontsize=8,verticalalignment='top')
-    plt.vlines(t0-(win/25),0,500)
+    plt.hlines(ymin,t0,(t0+win/5),color='k')
+    plt.text(t0,ymin-(0.01*ymax),f'{win/5:0.1f}s',fontsize=8,verticalalignment='top')
+    plt.vlines(t0-(win/25),0,500,color='k')
     plt.text(t0-(win/25),0,'500 $\\mu$m',rotation=90,horizontalalignment='right',verticalalignment='bottom',fontsize=8)
 
     # Label the pleth/dia

@@ -3,7 +3,10 @@ import numpy as np
 import tensortools as tt
 import matplotlib.pyplot as plt
 import pandas as pd
-from proc import raster2tensor
+try:
+    from npx_utils.proc import raster2tensor
+except:
+    from proc import raster2tensor
 def get_best_TCA(TT,max_rank=15,plot_tgl=True):
     ''' Fit ensembles of tensor decompositions.
         Returns the best model with the fewest parameters
