@@ -520,226 +520,233 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
     except:
         pass
 
-
+    err_fn = os.path.join(p_results,'err_log.csv')
     meta = data.parse_dir(ks2_dir)
     mouse_id = meta['mouse_id']
-    gate_id= meta['gate']
+    gate_id = meta['gate']
     probe_id = meta['probe']
 
     prefix = f'{mouse_id}_g{gate_id}_{probe_id}'
-    print('='*100)
+    print('=' * 100)
     print(f'run identifier is: {prefix}')
 
-    # ============================ #
-    # Load auxiliary data
-    epochs,breaths,aux = data.load_aux(ks2_dir)
-    max_time = np.min([aux['t'][-1],t_max])
-    print(f'Max time is: {max_time:0.1f}s or {max_time/60:0.0f}m')
-    breaths = proc.compute_breath_type(breaths) # classify sighs, apneas
-    spikes = data.load_filtered_spikes(ks2_dir)[0]
-    phi = proc.calc_dia_phase(breaths['on_sec'].values,breaths['off_sec'].values,dt=1/aux['sr'],t_stop=max_time)[1]
-    phi = transform_phase(phi)
-    opto_time,opto_fn,stim_len = get_opto_data(ks2_dir,stim_len)
-
-
-    # =============================== #
-    # Plot raster summaries
-    plot_long_raster(spikes,breaths,epochs)
-    plt.savefig(os.path.join(p_results,f'{prefix}_example_raster_long.png'),dpi=150)
-    plt.close('all')
-    if max_time<105:
-        raster_plot_start = max_time-25
-    else:
-        raster_plot_start = 100
-    viz.plot_raster_example(spikes,aux['sr'],aux['pleth'],aux['dia'],raster_plot_start,5)
-    plt.savefig(os.path.join(p_results,f'{prefix}_example_raster_short.png'),dpi=150)
-    plt.close('all')
-
-
-    # =============================== #
-    # Calculate and plot single cell summaries
-    df_sc = pd.DataFrame()
-    THETA = []
-    L_DIR = []
-    CELL_ID = []
-    MOD_DEPTH = []
-    COH=[]
-    LAG = []
-    TAGGED = []
-    TAG_RASTER = []
-    epochs_time = np.arange(0,max_time+1,300)
-    if len(epochs_time)==1:
-        epochs_time = np.concatenate([epochs_time,[max_time]])
-
-    df_phase_tune = pd.DataFrame()
-
-    t0 = 0
-    tf = np.where(aux['t'] < max_time)[0][-1]
-    if len(phi) >= max_time*aux['sr']:
-        phi_slice = phi[t0:tf]
-    else:
-        phi_slice = phi
-        max_time = aux['t'][-1]
-
-    # Run this first to rank order the coherence
-    print('Computing single cell characteristics...')
-    for cell_id in tqdm(spikes['cell_id'].unique()):
-
-         # Get phase tuning
-        dum = pd.DataFrame()
-        btrain = np.zeros_like(phi_slice)
-        all_spt = spikes[spikes.cell_id==cell_id]['ts']
-        spt = all_spt[all_spt<max_time-1]
-        sp_idx = np.round(spt * aux['sr']).astype('int')
-        sp_idx = sp_idx[sp_idx<len(btrain)]
-        btrain[sp_idx] = 1
-        if sum(btrain)<1000:
-            continue
-        rr,theta_k,theta,L_dir = proc.angular_response_hist(phi_slice,btrain,nbins=100)
-        theta_k = theta_k[:-1]+np.diff(theta_k)[0]
-        mod_depth = (np.max(rr)-np.min(rr))/np.mean(rr)
-        LAG.append(theta_k[np.argmax(rr)])
-        if opto_time is not None:
-            tag_raster,tagged = compute_opto_tag(all_spt,opto_time,stim_len)
-        else:
-            tagged = False
-            tag_raster = []
-        TAGGED.append(tagged)
-        TAG_RASTER.append(tag_raster)
-
-        # Get coherence to diaphragm
-        coh = proc.get_coherence(all_spt,aux['dia'],aux['sr'],0,max_time)[0]
-        COH.append(coh)
-
-        # Get phase tuning over time
-        nid = prefix+f'_c{cell_id:03.0f}'
-        dum[nid] = rr
-        df_phase_tune = pd.concat([df_phase_tune,dum],axis=1)
-
-        THETA.append(theta)
-        L_DIR.append(L_dir)
-        MOD_DEPTH.append(mod_depth)
-        CELL_ID.append(cell_id)
-
-    TAG_RASTER = np.array(TAG_RASTER)
-
-    # get the coherences in order to threshold the mean breath plot
-    coh_idx = np.zeros(spikes['cell_id'].nunique())
-    coh_idx[np.array(CELL_ID)] = np.array(COH)
-    plot_mean_breaths(spikes,breaths,max_time,p_results,prefix,coh_idx,coh_thresh=0.15)
     try:
-        plot_waterfall(spikes,breaths,max_time,waterfall_color='k')
-        plt.savefig(os.path.join(p_results, f'{prefix}_waterfall.png'), dpi=300)
-    except:
-        pass
-    plt.close('all')
 
-    df_phase_tune.index= theta_k
-    df_sc['theta'] = THETA
-    df_sc['l_dir'] = L_DIR
-    df_sc['cell_id'] = CELL_ID
-    df_sc['mod_depth'] = MOD_DEPTH
-    df_sc['coherence'] = COH
-    df_sc['phase_lag'] = LAG
-    df_sc['tagged'] = TAGGED
+        # ============================ #
+        # Load auxiliary data
+        epochs,breaths,aux = data.load_aux(ks2_dir)
+        max_time = np.min([aux['t'][-1],t_max])
+        print(f'Max time is: {max_time:0.1f}s or {max_time/60:0.0f}m')
+        breaths = proc.compute_breath_type(breaths,7) # classify sighs, apneas
+        spikes = data.load_filtered_spikes(ks2_dir)[0]
+        phi = proc.calc_dia_phase(breaths['on_sec'].values,breaths['off_sec'].values,dt=1/aux['sr'],t_stop=max_time)[1]
+        phi = transform_phase(phi)
+        opto_time,opto_fn,stim_len = get_opto_data(ks2_dir,stim_len)
 
-    psth_mod = proc.event_average_mod_depth(spikes,
-                                            breaths.query('type=="eupnea"')['on_sec'].values,
-                                            method='sqrt')
-    dd = spikes.groupby(['cell_id']).mean()['depth'].reset_index()
-    df_sc = df_sc.merge(psth_mod,how='inner',on='cell_id')
-    df_sc = df_sc.merge(dd,how='inner',on='cell_id')
-    df_sc['mouse_id'] = mouse_id
-    df_sc['gate_id'] = gate_id
-    df_sc['probe_id'] = probe_id
-    df_sc['uid'] = prefix
-    f = plt.figure(figsize=(4,3))
-    sns.scatterplot(x='event_triggered_modulation', y='coherence', data=df_sc, hue='l_dir')
-    sns.despine()
-    plt.tight_layout()
-    plt.savefig(os.path.join(p_results,f'{prefix}_tuning_strength_features.png'),dpi=300)
-    plt.close('all')
 
-    df_sc.to_csv(os.path.join(p_results,f'{prefix}_phase_tuning_stats.csv'))
-    df_phase_tune.to_csv(os.path.join(p_results,f'{prefix}_phase_tuning_curves.csv'))
-    sio.savemat(os.path.join(p_results,f'{prefix}_tag_rasters.mat'),{'t':np.arange(-0.02,0.02,0.001),'raster':TAG_RASTER,'cell_id':CELL_ID})
+        # =============================== #
+            # Plot raster summaries
 
-    ordered_mod_depth = df_sc.sort_values('coherence',ascending=False)['cell_id'].values
-
-    # Plot the single cell data
-    print('Plotting single cell summaries...')
-    for ii,cell_id in tenumerate(ordered_mod_depth):
-        is_tagged = df_sc.query('cell_id==@cell_id')['tagged'].values
-        f = plot_single_cell_summary(spikes[spikes.ts<aux['t'][-1]],cell_id,epochs_time,breaths,phi,aux['sr'],opto_time,aux,is_tagged,stim_len,epochs)
-        if is_tagged:
-            f.savefig(os.path.join(p_sc,f'{prefix}_summary_modrank{ii[0]:03.0f}_cellid{cell_id}_tagged.png'),dpi=150)
+        plot_long_raster(spikes,breaths,epochs)
+        plt.savefig(os.path.join(p_results,f'{prefix}_example_raster_long.png'),dpi=150)
+        plt.close('all')
+        if max_time<105:
+            raster_plot_start = max_time-25
         else:
-            f.savefig(os.path.join(p_sc,f'{prefix}_summary_modrank{ii[0]:03.0f}_cellid{cell_id}.png'),dpi=150)
+            raster_plot_start = 100
+        viz.plot_raster_example(spikes,aux['sr'],aux['pleth'],aux['dia'],raster_plot_start,5)
+        plt.savefig(os.path.join(p_results,f'{prefix}_example_raster_short.png'),dpi=150)
         plt.close('all')
 
 
-    # =====================
-    # Run the tensor factorization without affine warping
-    # =====================
-    dd = spikes.groupby('cell_id').mean()['depth']
-    raster,cell_id,bins = proc.bin_trains(spikes.ts,spikes.cell_id,max_time=epochs_time[-1],binsize=.005)
-    burst_dur = breaths['duration_sec'].mean()
-    pbi_dur = breaths['postBI'].mean()
-    TT,raster_bins = models.raster2tensor(raster,bins,breaths['on_sec'],pre=0.1,post=burst_dur+pbi_dur)
+        # =============================== #
+            # Calculate and plot single cell summaries
+        df_sc = pd.DataFrame()
+        THETA = []
+        L_DIR = []
+        CELL_ID = []
+        MOD_DEPTH = []
+        COH=[]
+        LAG = []
+        TAGGED = []
+        TAG_RASTER = []
+        epochs_time = np.arange(0,max_time+1,300)
+        if len(epochs_time)==1:
+            epochs_time = np.concatenate([epochs_time,[max_time]])
 
+        df_phase_tune = pd.DataFrame()
 
+        t0 = 0
+        tf = np.where(aux['t'] < max_time)[0][-1]
+        if len(phi) >= max_time*aux['sr']:
+            phi_slice = phi[t0:tf]
+        else:
+                 phi_slice = phi
+                 max_time = aux['t'][-1]
 
-    if run_tensor:
-        # Fit Tensor decomp
-        np.random.seed(42)
-        mdl,axs = models.get_best_TCA(TT,max_rank=12,plot_tgl=True)
+        # Run this first to rank order the coherence
+        print('Computing single cell characteristics...')
+        for cell_id in tqdm(spikes['cell_id'].unique()):
+
+             # Get phase tuning
+            dum = pd.DataFrame()
+            btrain = np.zeros_like(phi_slice)
+            all_spt = spikes[spikes.cell_id==cell_id]['ts']
+            spt = all_spt[all_spt<max_time-1]
+            sp_idx = np.round(spt * aux['sr']).astype('int')
+            sp_idx = sp_idx[sp_idx<len(btrain)]
+            btrain[sp_idx] = 1
+            if sum(btrain)<1000:
+                continue
+            rr,theta_k,theta,L_dir = proc.angular_response_hist(phi_slice,btrain,nbins=100)
+            theta_k = theta_k[:-1]+np.diff(theta_k)[0]
+            mod_depth = (np.max(rr)-np.min(rr))/np.mean(rr)
+            LAG.append(theta_k[np.argmax(rr)])
+            if opto_time is not None:
+                tag_raster,tagged = compute_opto_tag(all_spt,opto_time,stim_len)
+            else:
+                     tagged = False
+                     tag_raster = []
+            TAGGED.append(tagged)
+            TAG_RASTER.append(tag_raster)
+
+            # Get coherence to diaphragm
+            coh = proc.get_coherence(all_spt,aux['dia'],aux['sr'],0,max_time)[0]
+            COH.append(coh)
+
+            # Get phase tuning over time
+            nid = prefix+f'_c{cell_id:03.0f}'
+            dum[nid] = rr
+            df_phase_tune = pd.concat([df_phase_tune,dum],axis=1)
+
+            THETA.append(theta)
+            L_DIR.append(L_dir)
+            MOD_DEPTH.append(mod_depth)
+            CELL_ID.append(cell_id)
+
+        TAG_RASTER = np.array(TAG_RASTER)
+
+        # get the coherences in order to threshold the mean breath plot
+        coh_idx = np.zeros(spikes['cell_id'].nunique())
+        coh_idx[np.array(CELL_ID)] = np.array(COH)
+        plot_mean_breaths(spikes,breaths,max_time,p_results,prefix,coh_idx,coh_thresh=0.15)
+        try:
+                plot_waterfall(spikes,breaths,max_time,waterfall_color='k')
+                plt.savefig(os.path.join(p_results, f'{prefix}_waterfall.png'), dpi=300)
+        except:
+            pass
         plt.close('all')
 
-        # plot tensor decomp
-        factors = mdl.factors.factors
-        try:
-            viz.plot_tensortools_factors(mdl,raster_bins,dd)
-            plt.savefig(os.path.join(p_results,f'{prefix}_tensor_factors.png'),dpi=150)
-            plt.close('all')
-        except:
-            pass
+        df_phase_tune.index= theta_k
+        df_sc['theta'] = THETA
+        df_sc['l_dir'] = L_DIR
+        df_sc['cell_id'] = CELL_ID
+        df_sc['mod_depth'] = MOD_DEPTH
+        df_sc['coherence'] = COH
+        df_sc['phase_lag'] = LAG
+        df_sc['tagged'] = TAGGED
 
-        with open(os.path.join(p_results,f'{prefix}tensor_decomp.pkl'),'wb') as fid:
-            pickle.dump(factors,fid)
+        psth_mod = proc.event_average_mod_depth(spikes,
+                                                breaths.query('type=="eupnea"')['on_sec'].values,
+                                                method='sqrt')
+        dd = spikes.groupby(['cell_id']).mean()['depth'].reset_index()
+        df_sc = df_sc.merge(psth_mod,how='inner',on='cell_id')
+        df_sc = df_sc.merge(dd,how='inner',on='cell_id')
+        df_sc['mouse_id'] = mouse_id
+        df_sc['gate_id'] = gate_id
+        df_sc['probe_id'] = probe_id
+        df_sc['uid'] = prefix
+        f = plt.figure(figsize=(4,3))
+        sns.scatterplot(x='event_triggered_modulation', y='coherence', data=df_sc, hue='l_dir')
+        sns.despine()
+        plt.tight_layout()
+        plt.savefig(os.path.join(p_results,f'{prefix}_tuning_strength_features.png'),dpi=300)
+        plt.close('all')
+
+        df_sc.to_csv(os.path.join(p_results,f'{prefix}_phase_tuning_stats.csv'))
+        df_phase_tune.to_csv(os.path.join(p_results,f'{prefix}_phase_tuning_curves.csv'))
+        sio.savemat(os.path.join(p_results,f'{prefix}_tag_rasters.mat'),{'t':np.arange(-0.02,0.02,0.001),'raster':TAG_RASTER,'cell_id':CELL_ID})
+
+        ordered_mod_depth = df_sc.sort_values('coherence',ascending=False)['cell_id'].values
+
+        # Plot the single cell data
+        print('Plotting single cell summaries...')
+        for ii,cell_id in tenumerate(ordered_mod_depth):
+            is_tagged = df_sc.query('cell_id==@cell_id')['tagged'].values
+            f = plot_single_cell_summary(spikes[spikes.ts<aux['t'][-1]],cell_id,epochs_time,breaths,phi,aux['sr'],opto_time,aux,is_tagged,stim_len,epochs)
+            if is_tagged:
+                f.savefig(os.path.join(p_sc,f'{prefix}_summary_modrank{ii[0]:03.0f}_cellid{cell_id}_tagged.png'),dpi=150)
+            else:
+                f.savefig(os.path.join(p_sc,f'{prefix}_summary_modrank{ii[0]:03.0f}_cellid{cell_id}.png'),dpi=150)
+                plt.close('all')
+
 
         # =====================
-        # Try affine warping
-        # =====================
+            # Run the tensor factorization without affine warping
+            # =====================
+        dd = spikes.groupby('cell_id').mean()['depth']
+        raster,cell_id,bins = proc.bin_trains(spikes.ts,spikes.cell_id,max_time=epochs_time[-1],binsize=.005)
+        burst_dur = breaths['duration_sec'].mean()
+        pbi_dur = breaths['postBI'].mean()
+        TT,raster_bins = models.raster2tensor(raster,bins,breaths['on_sec'],pre=0.1,post=burst_dur+pbi_dur)
 
-        # This commented section is if you want to rebin the tensors.
-        # raster,cell_id,bins = proc.bin_trains(spikes.ts,spikes.cell_id,max_time=epochs[-1],binsize=.025)
-        # mask = np.sum(raster,1)>100
-        # raster = raster[mask,:]
-        # cell_id = cell_id[mask]
-        # dd = dd.loc[np.where(mask)[0]].values
-        # TT,raster_bins =models.raster2tensor(raster,bins,dia_df['on_sec'],pre=0.25,post=0.5)
-        TTt = np.transpose(TT,[2,0,1])
 
-        warp_mdl = PiecewiseWarping(n_knots=1)
-        warp_mdl.fit(TTt,iterations=25)
 
-        warped = warp_mdl.transform(TTt)
-        np.save(os.path.join(p_results,f'{prefix}_warped_tensor.npy'),warped)
-        warped = np.transpose(warped,[1,2,0])
-        warp_decomp,axs = models.get_best_TCA(warped,max_rank=12,plot_tgl=True)
-        try:
-            f = viz.plot_tensortools_factors(warp_decomp,raster_bins,dd)
-
-            # Save
-            plt.savefig(os.path.join(p_results,f'{prefix}_tensor_factors_warped.png'),dpi=150)
+        if run_tensor:
+            # Fit Tensor decomp
+            np.random.seed(42)
+            mdl,axs = models.get_best_TCA(TT,max_rank=12,plot_tgl=True)
             plt.close('all')
-        except:
-            pass
 
-        with open(os.path.join(p_results,f'{prefix}_tensor_decomp_warped.pkl'),'wb') as fid:
-            pickle.dump(factors,fid)
-    print('Analysis succesful')
+            # plot tensor decomp
+            factors = mdl.factors.factors
+            try:
+                    viz.plot_tensortools_factors(mdl,raster_bins,dd)
+                    plt.savefig(os.path.join(p_results,f'{prefix}_tensor_factors.png'),dpi=150)
+                    plt.close('all')
+            except:
+                pass
 
+            with open(os.path.join(p_results,f'{prefix}tensor_decomp.pkl'),'wb') as fid:
+                pickle.dump(factors,fid)
+
+            # =====================
+            # Try affine warping
+            # =====================
+
+            # This commented section is if you want to rebin the tensors.
+            # raster,cell_id,bins = proc.bin_trains(spikes.ts,spikes.cell_id,max_time=epochs[-1],binsize=.025)
+            # mask = np.sum(raster,1)>100
+            # raster = raster[mask,:]
+            # cell_id = cell_id[mask]
+            # dd = dd.loc[np.where(mask)[0]].values
+            # TT,raster_bins =models.raster2tensor(raster,bins,dia_df['on_sec'],pre=0.25,post=0.5)
+            TTt = np.transpose(TT,[2,0,1])
+
+            warp_mdl = PiecewiseWarping(n_knots=1)
+            warp_mdl.fit(TTt,iterations=25)
+
+            warped = warp_mdl.transform(TTt)
+            np.save(os.path.join(p_results,f'{prefix}_warped_tensor.npy'),warped)
+            warped = np.transpose(warped,[1,2,0])
+            warp_decomp,axs = models.get_best_TCA(warped,max_rank=12,plot_tgl=True)
+            try:
+                f = viz.plot_tensortools_factors(warp_decomp,raster_bins,dd)
+
+                # Save
+                plt.savefig(os.path.join(p_results,f'{prefix}_tensor_factors_warped.png'),dpi=150)
+                plt.close('all')
+            except:
+                pass
+
+            with open(os.path.join(p_results,f'{prefix}_tensor_decomp_warped.pkl'),'wb') as fid:
+                pickle.dump(factors,fid)
+        print('Analysis succesful')
+
+    except Exception as e:
+        with open(err_fn,'a') as fid:
+            fid.write(f'{prefix}\n')
+        raise e
 
 if __name__=='__main__':
     main()

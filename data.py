@@ -380,14 +380,18 @@ def load_aux(ks_dir,t=0):
 
     aux_dir = f'{ks_dir}/../../'
     epoch_list = glob.glob(aux_dir+'*epochs*.csv')
+    epoch_list.sort()
     if len(epoch_list) == 0:
         raise ValueError(f'No epoch csv found in {aux_dir}')
     if len(epoch_list)>1:
-        breaths = pd.read_csv(glob.glob(aux_dir + '*tcat*pleth*.csv')[0], index_col=0)
-        aux_dat = sio.loadmat(glob.glob(aux_dir + '*tcat*.mat')[0])
+        aux_dat = sio.loadmat(glob.glob(aux_dir+ '*tcat*aux*.mat')[t])
+        try:
+            breaths = pd.read_csv(glob.glob(aux_dir + '*tcat*pleth*.csv')[0], index_col=0)
+        except:
+            breaths = pd.read_csv(glob.glob(aux_dir + '*tcat*.csv')[0], index_col=0)
         epochs = pd.DataFrame()
         last_time =0
-        mat_list = glob.glob(aux_dir+'*.mat')[:len(epoch_list)]
+        mat_list = glob.glob(aux_dir+'*aux*.mat')[:len(epoch_list)]
         for ii,ff in enumerate(epoch_list):
             mat_dum = sio.loadmat(mat_list[ii])
             t_max = mat_dum['t'][-1][0]
@@ -401,7 +405,11 @@ def load_aux(ks_dir,t=0):
             epochs = pd.concat([epochs,dum])
     else:
         epochs = pd.read_csv(glob.glob(aux_dir+'*epochs*.csv')[t])
-        breaths = pd.read_csv(glob.glob(aux_dir+'*pleth*.csv')[t],index_col=0)
+        try:
+            breaths = pd.read_csv(glob.glob(aux_dir+'*pleth*.csv')[t],index_col=0)
+        except:
+            breaths = pd.read_csv(glob.glob(aux_dir+'*stat*.csv')[t],index_col=0)
+
         aux_dat = sio.loadmat(glob.glob(aux_dir+ '*aux*.mat')[t])
 
     breaths = breaths[breaths['duration_sec'] < 1]
@@ -414,7 +422,10 @@ def load_aux(ks_dir,t=0):
     aux_dat['dia'] = dia
     aux_dat['pleth'] = pleth
     aux_dat['sr'] = sr
-    breaths = breaths.reset_index().drop('Var1',axis=1)
+    try:
+        breaths = breaths.reset_index().drop('Var1',axis=1)
+    except:
+        pass
 
     # For compatibility with changed burst_stats_dia versions.
     if 'IBI' not in breaths.columns:

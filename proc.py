@@ -486,7 +486,7 @@ def events_in_epochs(evt,epoch_times,epoch_labels=None):
     return(cat,labels)
 
 
-def compute_breath_type(breaths):
+def compute_breath_type(breaths,thresh=7):
     '''
     Labels each breath as a 'eupnea','sigh', or 'apnea' based on the
     rolling average.
@@ -498,12 +498,15 @@ def compute_breath_type(breaths):
 
     filt_breaths = temp-temp.rolling(50).median()
     MAD = lambda x: np.nanmedian(np.abs(x - np.nanmedian(x)))
-    rolling_MAD = temp.rolling(window=51, center=True).apply(MAD)*10
+    rolling_MAD = temp.rolling(window=51, center=True).apply(MAD)*thresh
     idx = filt_breaths['auc']>rolling_MAD['auc']
     temp['type'] = 'eupnea'
     temp.loc[idx,'type'] = 'sigh'
-    apnea_mask = temp['inhale_onsets'].isna()
-    temp.loc[apnea_mask,'type']= 'apnea'
+
+    # prevent erroring out if there is no pleth analysis
+    if 'inhale_onsets' in temp.columns:
+        apnea_mask = temp['inhale_onsets'].isna()
+        temp.loc[apnea_mask,'type']= 'apnea'
 
     return temp
 

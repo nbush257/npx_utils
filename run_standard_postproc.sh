@@ -8,7 +8,7 @@
 #PBS -q paidq
 #PBS -e /active/ramirez_j/ramirezlab/nbush/logs
 #PBS -o /active/ramirez_j/ramirezlab/nbush/logs
-#PBS -J 0-200
+#PBS -J 0-167
 
 #0-200
 source activate opioid
