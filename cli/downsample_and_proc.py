@@ -162,7 +162,7 @@ def load_dia_emg(mmap,meta,chan_id):
     return(dat,sr)
 
 
-def filt_int_ds_dia(x,sr,ds_factor=10):
+def filt_int_ds_dia(x,sr,ds_factor=10,rel_height=0.95):
     '''
     Filter, integrate and downsample the diaphragm. Detect and summarize the diaphragm bursts
     Uses medfilt to smooth so it is a little slow, but it is worth it.
@@ -197,7 +197,7 @@ def filt_int_ds_dia(x,sr,ds_factor=10):
 
     # get the burst statistics
     warnings.filterwarnings('ignore')
-    dia_df = proc.burst_stats_dia(dia_sub,sr_sub,rel_height=0.95)
+    dia_df = proc.burst_stats_dia(dia_sub,sr_sub,rel_height=rel_height)
     warnings.filterwarnings('default')
 
     HR = get_hr(pulse/ds_factor,dia_df,sr_sub)

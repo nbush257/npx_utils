@@ -1,7 +1,3 @@
-#PBS -l ngpus=1
-#PBS -l mem=32gb
-#PBS -l vnode=pplhpc1gn002
-#PBS -l walltime=04:00:00
 #PBS -P Opioid
 #PBS -m abe
 #PBS -M nicholas.bush@seattlechildrens.org
