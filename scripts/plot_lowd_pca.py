@@ -16,6 +16,7 @@ import os
 import numpy as np
 import scipy.io.matlab as sio
 from sklearn.preprocessing import StandardScaler
+import datetime
 
 
 def plot_pca(pca,X,bins,breaths,aux,epochs,opto_df,max_t):
@@ -56,7 +57,7 @@ def plot_pca(pca,X,bins,breaths,aux,epochs,opto_df,max_t):
     cmap = plt.get_cmap('plasma',50)
     ax = f.add_subplot(gs[0,2:],projection='3d')
     ax.scatter3D(xs=X[:, 0], ys=X[:, 1], zs=X[:, 2], c=X[:, 3],cmap=plt.get_cmap('plasma'),
-                 alpha=0.01, s=np.ones(X.shape[1]) * 10)
+                 alpha=0.01, s=10)
     vmin = np.min(X[:,3])
     vmax = np.max(X[:,3])
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
@@ -140,8 +141,10 @@ def main(ks_dir,max_t):
 
 if __name__ == '__main__':
     # Must be run on HPC
-    data_fn = "/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/ks3_dirs.csv"
-    save_p = "/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/results/PCA_trajectory_plots"
+    data_fn = "/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/ks3_dirs_filtered.csv"
+    dt = datetime.datetime.now()
+    date_str = f'{dt.year}-{dt.month:02.0f}-{dt.day:02.0f}'
+    save_p = f'/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/results/{date_str}_PCA_trajectory_plots'
     if os.path.isdir(save_p):
         shutil.rmtree(save_p)
         os.makedirs(save_p)
@@ -149,16 +152,21 @@ if __name__ == '__main__':
         os.makedirs(save_p)
     data_list = pd.read_csv(data_fn,header=None)
     for k,v in data_list.iterrows():
-        ks_dir = v[0]
-        max_t = v[1]
-        print('='*100)
-        print(f'Working on {ks_dir}')
-        print('='*100)
-        data_mat = main(ks_dir,max_t)
-        sess = data.parse_dir(ks_dir)
-        save_name = f'{save_p}/{sess["mouse_id"]}_g{sess["gate"]}_pca_trajectories.png'
-        plt.savefig(save_name,dpi=300)
+        try:
+            ks_dir = v[0]
+            max_t = v[1]
+            print('='*100)
+            print(f'Working on {ks_dir}')
+            print('='*100)
+            data_mat = main(ks_dir,max_t)
+            sess = data.parse_dir(ks_dir)
+            save_name = f'{save_p}/{sess["mouse_id"]}_g{sess["gate"]}_{sess["probe"]}_pca_trajectories.png'
+            plt.savefig(save_name,dpi=300)
 
-        save_name = f'{save_p}/{sess["mouse_id"]}_g{sess["gate"]}_pca_decom.mat'
-        sio.savemat(save_name,data_mat)
+            save_name = f'{save_p}/{sess["mouse_id"]}_g{sess["gate"]}_{sess["probe"]}_pca_decomp.mat'
+            sio.savemat(save_name,data_mat)
+        except:
+            print('ERROR!')
+            print('ERROR!')
+            print('ERROR!')
 
