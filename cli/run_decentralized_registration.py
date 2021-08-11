@@ -6,6 +6,7 @@ import shutil
 import sys
 if sys.platform == 'linux':
     sys.path.append('/active/ramirez_j/ramirezlab/nbush/helpers/NeuropixelsRegistration/python')
+    sys.path.append('/active/ramirez_j/ramirezlab/nbush/projects/npx_utils')
     sys.path.append('/active/ramirez_j/ramirezlab/nbush/helpers/')
 else:
     sys.path.append('Y:/helpers/NeuropixelsRegistration/python')
@@ -22,6 +23,8 @@ import click
 import glob
 import shutil
 import subprocess
+import SGLXMetaToCoords
+from pathlib import Path
 
 def sanitize_meta(bin_fn):
     '''
@@ -103,8 +106,12 @@ def plot_shift(total_shift,probe_dir):
 @click.option('--batch_num','-b',default=0)
 @click.option('--compute_shift','-c',is_flag=True)
 def main(probe_dir,resume,iteration_num,batch_num,compute_shift):
-    chan_map_fn = glob.glob(os.path.join(probe_dir,'*ap*chanMap.mat'))[0]
+
     bin_fn = glob.glob(os.path.join(probe_dir,'*tcat.imec*ap.bin'))[0]
+    sanitize_meta(bin_fn)
+    meta_fn = bin_fn.replace('.bin','.meta')
+    SGLXMetaToCoords.MetaToCoords(Path(meta_fn),1)
+    chan_map_fn = glob.glob(os.path.join(probe_dir,'*kilosortChanMap.mat'))[0]
     print(f"Registering\n\t{bin_fn}")
     if sys.platform=='linux':
         registered_dir = os.path.join(probe_dir,'registered')
@@ -114,7 +121,6 @@ def main(probe_dir,resume,iteration_num,batch_num,compute_shift):
 
 
 
-    sanitize_meta(bin_fn)
     geomarray = mat2npy(chan_map_fn)
     reader = spikeglx.Reader(bin_fn)
 

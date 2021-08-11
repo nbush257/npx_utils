@@ -8,7 +8,7 @@
 #PBS -q paidq
 #PBS -e /active/ramirez_j/ramirezlab/nbush/logs
 #PBS -o /active/ramirez_j/ramirezlab/nbush/logs
-#PBS -J 20-22
+#PBS -J 0-205
 
 module load cuda90/toolkit/9.2.148
 source activate decentralized_reg
