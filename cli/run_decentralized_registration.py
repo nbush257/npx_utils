@@ -91,7 +91,7 @@ def plot_shift(total_shift,probe_dir):
     ax[1].set_ylabel('probe shift (um)')
     plt.sca(ax[1])
     plt.colorbar(h)
-    plt.savefig(os.path.join(probe_dir,'driftmat_decentralized.png'),dpi=300)
+    plt.savefig(os.path.join(probe_dir,'driftmat_decentralized.png'),dpi=150)
     plt.close('all')
 
 
