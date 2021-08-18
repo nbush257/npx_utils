@@ -269,9 +269,7 @@ def filter_default_metrics(spikes,metrics):
     '''
     Runs filter_by_metric for a few standard metrics.
     Allen metrics : presence ratio >.95, isi_viol<1, amplitude_cutoff < 0.1
-    NEB metrics: isi_viol < 2, amplitude_cutoff < 0.2
-    I am not using presence ration because I expect some gasp only neurons.
-    Amplitude cutoff should still work although I am not sure if with KS2.5 it still makes sense
+    NEB metrics: isi_viol < 2, amplitude_cutoff < 0.1,presence_ratio>0.9
     isi_violations should be relaxed a little given the bursty nature of these neurons
     :param metrics:
     :param spikes:
@@ -279,7 +277,8 @@ def filter_default_metrics(spikes,metrics):
     '''
     spikes = filter_by_spikerate(spikes,100)
     spikes = filter_by_metric(spikes,metrics,'isi_viol<2 ')
-    spikes = filter_by_metric(spikes,metrics,'amplitude_cutoff<0.2')
+    spikes = filter_by_metric(spikes,metrics,'amplitude_cutoff<0.1')
+    spikes = filter_by_metric(spikes,metrics,'presence_ratio>0.9')
     # spikes = filter_by_metric(spikes,metrics,'amplitude>150')
 
     return(spikes)
