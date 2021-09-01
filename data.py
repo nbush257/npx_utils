@@ -390,7 +390,9 @@ def load_aux(ks_dir,t=0):
             breaths = pd.read_csv(glob.glob(aux_dir + '*tcat*.csv')[0], index_col=0)
         epochs = pd.DataFrame()
         last_time =0
-        mat_list = glob.glob(aux_dir+'*aux*.mat')[:len(epoch_list)]
+        mat_list = glob.glob(aux_dir+'*aux*.mat')
+        mat_list.sort()
+        mat_list = mat_list[:len(epoch_list)]
         for ii,ff in enumerate(epoch_list):
             mat_dum = sio.loadmat(mat_list[ii])
             t_max = mat_dum['t'][-1][0]

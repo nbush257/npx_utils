@@ -1,14 +1,14 @@
 #PBS -l mem=16gb
 #PBS -l nodes=1:ppn=2
 #PBS -l walltime=14:00:00
-#PBS -P Opioid
+#PBS -P a113801f-349d-42b5-9490-aa02e70721e3
 #PBS -m abe
 #PBS -M nicholas.bush@seattlechildrens.org
 #PBS -N standard_postproc
 #PBS -q paidq
 #PBS -e /active/ramirez_j/ramirezlab/nbush/logs
 #PBS -o /active/ramirez_j/ramirezlab/nbush/logs
-#PBS -J 0-167
+#PBS -J 0-203
 
 #0-200
 source activate opioid
@@ -17,7 +17,7 @@ export PYTHONWARNINGS="ignore"
 dir_list=()
 t_max_list=()
 opto_len_list=()
-data_org_fn=/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/ks3_dirs_filtered.csv
+data_org_fn=/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/ks3_dirs_filtered_v2.csv
 while IFS=, read -r ks3_dir t_max opto_len
 do
     dir_list+=($ks3_dir)
@@ -27,7 +27,7 @@ do
 done < $data_org_fn;
 
 
-cd $PROJ/npx_utils/cli
+cd $PROJ/npx_utils/scripts
 ii=$PBS_ARRAY_INDEX
 echo Working on ${dir_list[$ii]}
 python -W ignore standard_postproc.py ${dir_list[$ii]} --t_max ${t_max_list[$ii]} --stim_len ${opto_len_list[$ii]}
