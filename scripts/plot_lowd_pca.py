@@ -141,7 +141,7 @@ def main(ks_dir,max_t):
 
 if __name__ == '__main__':
     # Must be run on HPC
-    data_fn = "/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/ks3_dirs_filtered.csv"
+    data_fn = "/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/ks3_dirs_filtered_v2.csv"
     dt = datetime.datetime.now()
     date_str = f'{dt.year}-{dt.month:02.0f}-{dt.day:02.0f}'
     save_p = f'/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/results/{date_str}_PCA_trajectory_plots'
