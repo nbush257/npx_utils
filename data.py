@@ -14,8 +14,9 @@ except:
     import readSGLX
 from pathlib import Path
 sys.path.append('../')
+sys.path.append(r'Y:\projects')
 sys.path.append('/active/ramirez_j/ramirezlab/nbush/projects')
-from utils.ephys.signal import binary_onsets
+from utility.ephys.signal import binary_onsets
 from spykes.plot import NeuroVis,PopVis
 from tqdm import tqdm
 import scipy.io.matlab as sio
@@ -330,12 +331,14 @@ def create_spykes_pop(spikes,start_time=0,stop_time=np.inf):
     sub_spikes = sub_spikes[sub_spikes['ts']<stop_time]
 
     neuron_list = []
-    for ii, cell_id in enumerate(sub_spikes['cell_id'].unique()):
+    cell_ids = sub_spikes['cell_id'].unique()
+    cell_ids.sort()
+    for ii, cell_id in enumerate(cell_ids):
         sub_df = sub_spikes[sub_spikes['cell_id'] == cell_id]
         if(len(sub_df.ts))<10:
             neuron = []
         else:
-            neuron = NeuroVis(sub_df.ts, ii)
+            neuron = NeuroVis(sub_df.ts, cell_id)
         neuron_list.append(neuron)
 
     pop = PopVis(neuron_list)
@@ -376,14 +379,13 @@ def load_aux(ks_dir,t=0):
     :param t: The trial index
     :return: epochs,breaths,aux_dat
     '''
-
-    aux_dir = f'{ks_dir}/../../'
-    epoch_list = glob.glob(aux_dir+'*epochs*.csv')
+    aux_dir = os.path.join(ks_dir,'../../')
+    epoch_list = glob.glob(os.path.join(aux_dir,'*epochs*.csv'))
     epoch_list.sort()
     if len(epoch_list) == 0:
         raise ValueError(f'No epoch csv found in {aux_dir}')
     if len(epoch_list)>1:
-        aux_dat = sio.loadmat(glob.glob(aux_dir+ '*tcat*aux*.mat')[t])
+        aux_dat = sio.loadmat(glob.glob(aux_dir+ '*tcat*aux*.mat')[0])
         try:
             breaths = pd.read_csv(glob.glob(aux_dir + '*tcat*pleth*.csv')[0], index_col=0)
         except:
@@ -394,7 +396,7 @@ def load_aux(ks_dir,t=0):
         mat_list.sort()
         mat_list = mat_list[:len(epoch_list)]
         for ii,ff in enumerate(epoch_list):
-            mat_dum = sio.loadmat(mat_list[ii])
+            mat_dum = sio.loadmat(mat_list[ii],variable_names=['t'])
             t_max = mat_dum['t'][-1][0]
             dum = pd.read_csv(ff)
             dum['t0'] += last_time
@@ -405,13 +407,16 @@ def load_aux(ks_dir,t=0):
 
             epochs = pd.concat([epochs,dum])
     else:
+        aux_dat = sio.loadmat(glob.glob(aux_dir + '*aux*.mat')[t])
         epochs = pd.read_csv(glob.glob(aux_dir+'*epochs*.csv')[t])
         try:
             breaths = pd.read_csv(glob.glob(aux_dir+'*pleth*.csv')[t],index_col=0)
         except:
             breaths = pd.read_csv(glob.glob(aux_dir+'*stat*.csv')[t],index_col=0)
 
-        aux_dat = sio.loadmat(glob.glob(aux_dir+ '*aux*.mat')[t])
+        if np.isnan(epochs['tf'].iloc[-1]):
+            epochs['tf'].iloc[-1] = aux_dat['t'][-1][0]/60
+
 
     breaths = breaths[breaths['duration_sec'] < 1]
     aux_t = aux_dat['t'].ravel()
