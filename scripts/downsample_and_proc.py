@@ -18,7 +18,7 @@ import sys
 import warnings
 sys.path.append('../')
 sys.path.append('../../')
-sys.path.append('../../utils')
+sys.path.append('../../utility')
 import readSGLX
 import numpy as np
 import scipy.signal as sig
