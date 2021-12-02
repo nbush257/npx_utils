@@ -18,7 +18,6 @@ sys.path.append('../../')
 sys.path.append('../')
 sys.path.append('.')
 
-
 def bwfilt(x,fs,low=300,high=10000):
     '''
     Convenience function to a 4th order butterworth bandpass filter
@@ -102,7 +101,7 @@ def shift_phi(phi,insp_onset):
     return(new_phi)
 
 
-def calc_dia_phase(ons,offs=None,t_start=0,t_stop=None,dt=1/1000):
+def calc_dia_phase(ons,offs=None,t_start=0,t_stop=None,dt=1/1000,transform=True):
     '''
     Computes breathing phase based on the diaphragm
     Phase is [0,1] where 0 is diaphragm onset, 0.5 is diaphragm offset, and 1 is diaphragm onset again,
@@ -146,9 +145,10 @@ def calc_dia_phase(ons,offs=None,t_start=0,t_stop=None,dt=1/1000):
             try:
                 phi[idx[1]:idx[2]] = np.linspace(0.5,1,idx[2]-idx[1])
             except:
-                print([on,off,next_on])
-                print(idx)
-                print(ii)
+                pass
+                # print([on,off,next_on])
+                # print(idx)
+                # print(ii)
 
     else:
         for ii in range(n_breaths-1):
@@ -156,6 +156,12 @@ def calc_dia_phase(ons,offs=None,t_start=0,t_stop=None,dt=1/1000):
             next_on = ons[ii+1]
             idx = np.searchsorted(t_phi,[on,next_on])
             phi[idx[0]:idx[1]] = np.linspace(0,1,idx[1]-idx[0])
+
+    if transform:
+        phi = phi + 0.5
+        phi[phi > 1] = phi[phi > 1] - 1
+        phi -= .5
+        phi *= np.pi * 2
 
     return(t_phi,phi)
 
@@ -342,6 +348,7 @@ def calc_is_mod(ts,events,pre_win=-0.1,post_win=.150):
             is_mod: boolean result of wilcoxon rank sum test
             mod_depth: mean firing rate modulation (post-pre)/(pre+post)
     '''
+    raise(ValueError('Not Robust Do not use this'))
     neuron = NeuroVis(ts)
     df= pd.DataFrame()
     df['event'] = events
@@ -486,7 +493,7 @@ def events_in_epochs(evt,epoch_times,epoch_labels=None):
     return(cat,labels)
 
 
-def compute_breath_type(breaths,thresh=7):
+def compute_breath_type(breaths,thresh=7,feat='auc',win=50):
     '''
     Labels each breath as a 'eupnea','sigh', or 'apnea' based on the
     rolling average.
@@ -496,10 +503,10 @@ def compute_breath_type(breaths,thresh=7):
     '''
     temp = breaths.copy()
 
-    filt_breaths = temp-temp.rolling(50).median()
+    filt_breaths = temp-temp.rolling(win).median()
     MAD = lambda x: np.nanmedian(np.abs(x - np.nanmedian(x)))
-    rolling_MAD = temp.rolling(window=51, center=True).apply(MAD)*thresh
-    idx = filt_breaths['auc']>rolling_MAD['auc']
+    rolling_MAD = temp.rolling(window=win+1, center=True).apply(MAD)*thresh
+    idx = filt_breaths[feat]>rolling_MAD[feat]
     temp['type'] = 'eupnea'
     temp.loc[idx,'type'] = 'sigh'
 
@@ -558,32 +565,37 @@ def get_breaths(breaths,sr,analog,t_pre=0.2,t_post=0.5):
     return(eup,sigh,apnea,t)
 
 
-def get_sta(x,tvec,ts,win=0.5):
+def get_sta(x,tvec,ts,pre_win=0.5,post_win=None):
     '''
     Compute the spike triggered average, std, sem of a covariate x
     :param x: The analog signal to check against
     :param tvec: the time vector for x
     :param ts: the timestamps (in seconds) of the cell to get the sta for
-    :param win: the window (symmetric about the spike) to average
+    :param pre_win: the window before to average
+    :param post_win: the window after_the spike to average
+
     :return:
     '''
     assert(len(tvec)==len(x))
+    if post_win is None:
+        post_win=pre_win
 
     dt = tvec[1]-tvec[0]
     samps = np.searchsorted(tvec,ts)
-    win_samps = int(win/dt)
-    spike_triggered = np.zeros([win_samps*2,len(samps)])
+    win_samps_pre = int(pre_win/dt)
+    win_samps_post = int(post_win/dt)
+    spike_triggered = np.zeros([win_samps_pre+win_samps_post,len(samps)])
     for ii,samp in enumerate(samps):
-        if (samp-win_samps)<0:
+        if (samp-win_samps_pre)<0:
             continue
-        if (samp+win_samps)>len(x):
+        if (samp+win_samps_post)>len(x):
             continue
-        spike_triggered[:,ii] = x[samp-win_samps:samp+win_samps]
+        spike_triggered[:,ii] = x[samp-win_samps_pre:samp+win_samps_post]
 
     st_average = np.nanmean(spike_triggered,1)
     st_sem = np.nanstd(spike_triggered,1)/np.sqrt(len(samps))
     st_std = np.nanstd(spike_triggered,1)
-    win_t = np.linspace(-win,win,win_samps*2)
+    win_t = np.linspace(-pre_win,post_win,(win_samps_pre+win_samps_post))
     sta = {'mean':st_average,
            'sem':st_sem,
            'std':st_std,
@@ -664,8 +676,6 @@ def get_coherence_all(spikes,x,x_sr,t0,tf,method='static'):
         coh_df = pd.DataFrame()
         coh_df['cell_id'] = cells
         coh_df['coherence'] = coh
-
-
 
 
 def event_average_mod_depth(spikes,events,pre=0.25,post=0.5,method='sqrt'):
@@ -782,6 +792,95 @@ def raster2tensor(raster,raster_bins,events,pre = .100,post = .200):
         raster_T[:,:,ii]= xx
     bins = np.arange(-pre,post,dt)
     return(raster_T,bins)
+
+
+def calc_is_mod_MI(ts,events,pre_win=-0.25,post_win=0.25):
+    pass
+
+
+def is_mod_v2(ts, events, pre_win=-0.1, post_win=0.1, binsize=0.01, thresh=2):
+    '''
+    Compares the Mean and SEM of pre and post event. Needs tweeaking probably
+    :param ts:
+    :param events:
+    :param pre_win:
+    :param post_win:
+    :param binsize:
+    :param thresh:
+    :return:
+    '''
+    neuron = NeuroVis(ts)
+    df = pd.DataFrame()
+    if type(events) is pd.core.series.Series:
+        events = events.values
+    df['event'] = events
+    df['event_jittered'] = np.random.uniform(events[0], events[-1], len(events))
+
+    psth_true = neuron.get_psth(df=df, event='event', plot=False, binsize=binsize * 1000,
+                                window=[pre_win * 1000, post_win * 1000])
+    psth_jittered = neuron.get_psth(df=df, event='event_jittered', plot=False, binsize=binsize * 1000,
+                                    window=[pre_win * 1000, post_win * 1000])
+
+    true_m = psth_true['data'][0]['mean']
+    true_sem = psth_true['data'][0]['sem'] * thresh
+
+    jit_m = psth_jittered['data'][0]['mean']
+    jit_sem = psth_jittered['data'][0]['sem'] * thresh
+
+    true_lb = true_m - true_sem
+    true_ub = true_m + true_sem
+
+    jit_lb = jit_m - jit_sem
+    jit_ub = jit_m + jit_sem
+
+    abv = true_lb > jit_ub
+    below = true_ub < jit_lb
+    between = np.logical_or(abv, below)
+
+    mod = np.any(between)
+    return (mod)
+
+
+def recompute_apneas(breaths,aux,thresh=3):
+    '''
+    Recomputes the apnea detection. Overwrites apneas as eupneas
+    :param breaths:
+    :param aux:
+    :return: breaths
+    '''
+    win=401
+    if win%2==0:
+        win+=1
+    ons = breaths['on_sec']
+    offs = ons[1:]
+    ons = ons[:-1]
+
+    s0 = np.searchsorted(aux['t'], ons)
+    sf = np.searchsorted(aux['t'], offs)
+
+    inhale_volumes = np.zeros(len(ons)+1)
+    exhale_volumes = np.zeros(len(ons)+1)
+
+    for ii, (on, off) in enumerate(zip(s0, sf)):
+        x_slice = aux['pleth'][on:off]
+        inhale_volumes[ii] = np.trapz(x_slice[x_slice > 0])
+        exhale_volumes[ii] = np.trapz(x_slice[x_slice < 0])
+
+    temp = breaths.copy()
+    temp[temp['type']=='apnea']['type'] = 'eupnea'
+    temp['inhale_volumes'] = inhale_volumes
+    temp['exhale_volumes'] = exhale_volumes
+
+
+    filt_breaths = temp-temp.rolling(win+1).median()
+    MAD = lambda x: np.nanmedian(np.abs(x - np.nanmedian(x)))
+    rolling_MAD = temp.rolling(window=win, center=True).apply(MAD)*thresh
+    idx = filt_breaths['inhale_volumes']<-rolling_MAD['inhale_volumes']
+    temp.loc[idx,'type'] = 'apnea'
+    return(temp)
+
+
+
 
 
 
