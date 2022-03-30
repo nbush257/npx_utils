@@ -81,7 +81,7 @@ def remove_EKG(x,sr,thresh=2):
     ekg_std[mask] = np.nanmedian(ekg_std)
 
 
-    bgm = BayesianGaussianMixture(2)
+    bgm = BayesianGaussianMixture(n_components=2)
     cls = bgm.fit_predict(ekg_std[:,np.newaxis])
     cls[cls==0]=-1
     m0 = np.nanmean(ekg_std[cls==-1])
@@ -216,16 +216,38 @@ def make_save_fn(fn,save_path,save_name='_aux_downsamp'):
     save_fn = os.path.join(save_path,prefix+save_name+'.mat')
     return(save_fn,prefix)
 
+def extract_hr_channel(mmap,meta,ekg_chan=4):
+    '''
+    If the ekg is recorded on a separate channel, extract it here
+    '''
+    bitvolts = readSGLX.Int2Volts(meta)
+    sr = readSGLX.SampRate(meta)
+    dat = mmap[ekg_chan]*bitvolts
+    dat = dat-np.mean(dat)
 
-def main(fn,pleth_chan,dia_chan,save_path):
+    sos = sig.butter(8,[100/sr/2,1000/sr/2],btype='bandpass',output='sos')
+    xs = sig.sosfilt(sos,dat)
+    pks = sig.find_peaks(xs,prominence=5*np.std(xs),distance=int(0.05*sr))[0]
+
+    pulse = pd.DataFrame()
+    pulse['hr (bpm)'] = 60*sr/np.diff(pks)
+    aa = pulse.rolling(50,center=True).median()
+    aa.interpolate(limit_direction='both',inplace=True)
+    aa['t']=pks[:-1]/sr
+    return(aa)
+
+
+
+def main(fn,pleth_chan,dia_chan,ekg_chan,save_path):
 
     if save_path is None:
         save_path = os.path.split(fn)[0]
 
-
     mmap,meta = load_mmap(fn)
     raw_dia,sr_dia = load_dia_emg(mmap,meta,dia_chan)
     dia_df,dia_sub,sr_dia_sub,HR,dia_filt = filt_int_ds_dia(raw_dia,sr_dia)
+    HR = extract_hr_channel(mmap,meta,ekg_chan)
+
     if pleth_chan<0:
         pleth = []
         sr_pleth = sr_dia_sub
@@ -280,8 +302,9 @@ def main(fn,pleth_chan,dia_chan,save_path):
 @click.argument('fn')
 @click.option('-p','--pleth_chan','pleth_chan',default=0)
 @click.option('-d','--dia_chan','dia_chan',default=1)
+@click.option('-d','--ekg_chan','dia_chan',default=4)
 @click.option('-s','--save_path','save_path',default=None)
-def batch(fn,pleth_chan,dia_chan,save_path):
+def batch(fn,pleth_chan,dia_chan,ekg_chan,save_path):
     '''
     Set pleth chan to -1 if no pleth is recorded.
     :param fn:
@@ -301,7 +324,7 @@ def batch(fn,pleth_chan,dia_chan,save_path):
                     fname = os.path.join(root,ff)
                     print(fname)
                     try:
-                        main(fname,pleth_chan,dia_chan,root)
+                        main(fname,pleth_chan,dia_chan,ekg_chan,root)
                         if pleth_chan>=0:
                             matlab_cmd_string = "matlab -r -nosplash -nodesktop -nojvm bm_mat_proc('" + fname + "')"
                             os.system(matlab_cmd_string)
