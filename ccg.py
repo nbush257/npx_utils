@@ -1,199 +1,116 @@
+'''
+Based on the Xiaowen Jia code from the allen. Using a different munging technique where
+instead of having PSTHs for the stims, we are using raw spike times, jittering them, and
+calculating the ISI distribution, not the CCG. Might need to go back to the CCG, but that would be easy
+'''
 import numpy as np
+import scipy.signal
+import sys
+
 import proc
 from tqdm import tqdm
+sys.path.append('/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/dynaresp')
+sys.path.append('/active/ramirez_j/ramirezlab/nbush/projects')
+from npx_utils import proc
+import utils
+import os
 
 
-def jitter(data, l):
-    """
-    Jittering multidemntational logical data where
-    0 means no spikes in that time bin and 1 indicates a spike in that time bin.
-     Be sure to cite Xiaoxuan Jia https://github.com/jiaxx/jitter
-    """
-    if len(np.shape(data)) > 3:
-        flag = 1
-        sd = np.shape(data)
-        data = np.reshape(data, (
-            np.shape(data)[0], np.shape(data)[1], len(data.flatten()) / (np.shape(data)[0] * np.shape(data)[1])),
-                          order='F')
-    else:
-        flag = 0
 
-    psth = np.mean(data, axis=1)
-    length = np.shape(data)[0]
-
-    if np.mod(np.shape(data)[0], l):
-        data[length:(length + np.mod(-np.shape(data)[0], l)), :, :] = 0
-        psth[length:(length + np.mod(-np.shape(data)[0], l)), :] = 0
-
-    if len(np.shape(psth))>1 and np.shape(psth)[1] > 1:
-        dataj = np.squeeze(
-            np.sum(np.reshape(data, [l, np.shape(data)[0] // l, np.shape(data)[1], np.shape(data)[2]], order='F'),
-                   axis=0))
-        psthj = np.squeeze(
-            np.sum(np.reshape(psth, [l, np.shape(psth)[0] // l, np.shape(psth)[1]], order='F'), axis=0))
-    else:
-        dataj = np.sum(np.reshape(data, [l, np.shape(data)[0] // l, np.shape(data)[1]], order='F'),axis=0)
-        psthj = np.sum(np.reshape(psth, [l, np.shape(psth)[0] // l], order='F'),axis=0)
-
-    if np.shape(data)[0] == l:
-        dataj = np.reshape(dataj, [1, np.shape(dataj)[0], np.shape(dataj)[1]], order='F')
-        psthj = np.reshape(psthj, [1, np.shape(psthj[0])], order='F')
-
-    if len(np.shape(psthj))>1:
-        psthj = np.reshape(psthj, [np.shape(psthj)[0], 1, np.shape(psthj)[1]], order='F')
-    else:
-        psthj = np.reshape(psthj, [np.shape(psthj)[0], 1], order='F')
-
-    psthj[psthj == 0] = 10e-10
-
-    if len(np.shape(psthj))>2:
-        corr = dataj / np.tile(psthj, [1, np.shape(dataj)[1], 1])
-        corr = np.reshape(corr, [1, np.shape(corr)[0], np.shape(corr)[1], np.shape(corr)[2]], order='F')
-        corr = np.tile(corr, [l, 1, 1, 1])
-        corr = np.reshape(corr, [np.shape(corr)[0] * np.shape(corr)[1], np.shape(corr)[2], np.shape(corr)[3]],
-                          order='F')
-        psth = np.reshape(psth, [np.shape(psth)[0], 1, np.shape(psth)[1]], order='F')
-        output = np.tile(psth, [1, np.shape(corr)[1], 1]) * corr
-
-        output = output[:length, :, :]
-    else:
-        corr = dataj / np.tile(psthj, [1, np.shape(dataj)[1]])
-        corr = np.reshape(corr, [1, np.shape(corr)[0], np.shape(corr)[1]], order='F')
-        corr = np.tile(corr, [l, 1, 1])
-        corr = np.reshape(corr, [np.shape(corr)[0] * np.shape(corr)[1], np.shape(corr)[2],],
-                          order='F')
-        psth = np.reshape(psth, [np.shape(psth)[0], 1], order='F')
-        output = np.tile(psth, [1, np.shape(corr)[1]]) * corr
-
-        output = output[:length, :]
-
-
-    return output
-
-
-def xcorrfft(a,b,NFFT):
-    CCG = np.fft.fftshift(np.fft.ifft(np.multiply(np.fft.fft(a,NFFT), np.conj(np.fft.fft(b,NFFT)))))
-    return CCG
-
-
-def nextpow2(n):
-    """get the next power of 2 that's greater than n"""
-    m_f = np.log2(n)
-    m_i = np.ceil(m_f)
-    return 2**m_i
-
-
-def get_ccgjitter(spikes, FR, jitterwindow=25):
-    # spikes: neuron*ori*trial*time
-    assert np.shape(spikes)[0]==len(FR)
-
-    n_unit=np.shape(spikes)[0]
-    n_t = np.shape(spikes)[3]
-    # triangle function
-    t = np.arange(-(n_t-1),(n_t-1))
-    theta = n_t-np.abs(t)
-    del t
-    NFFT = int(nextpow2(2*n_t))
-    target = np.array([int(i) for i in NFFT/2+np.arange((-n_t+2),n_t)])
-
-    ccgjitter = []
-    rawccg = []
-    pair=0
-    for i in np.arange(n_unit-1): # V1 cell
-        for m in np.arange(i+1,n_unit):  # V2 cell
-            if FR[i]>2 and FR[m]>2:
-                temp1 = np.squeeze(spikes[i,:,:,:])
-                temp2 = np.squeeze(spikes[m,:,:,:])
-                FR1 = np.squeeze(np.mean(np.sum(temp1,axis=2), axis=1))
-                FR2 = np.squeeze(np.mean(np.sum(temp2,axis=2), axis=1))
-                tempccg = xcorrfft(temp1,temp2,NFFT)
-                tempccg = np.squeeze(np.nanmean(tempccg[:,:,target],axis=1))
-
-                temp1 = np.rollaxis(np.rollaxis(temp1,2,0), 2,1)
-                temp2 = np.rollaxis(np.rollaxis(temp2,2,0), 2,1)
-                ttemp1 = jitter(temp1,jitterwindow)
-                ttemp2 = jitter(temp2,jitterwindow)
-                tempjitter = xcorrfft(np.rollaxis(np.rollaxis(ttemp1,2,0), 2,1),np.rollaxis(np.rollaxis(ttemp2,2,0), 2,1),NFFT)
-                tempjitter = np.squeeze(np.nanmean(tempjitter[:,:,target],axis=1))
-                ccgjitter.append((tempccg - tempjitter).T/np.multiply(np.tile(np.sqrt(FR[i]*FR[m]), (len(target), 1)),
-                                                                      np.tile(theta.T.reshape(len(theta),1),(1,len(FR1)))))
-
-    ccgjitter = np.array(ccgjitter)
-    return ccgjitter
-
-
-def compute_ccg(ts,idx,events,max_time=1000,event_window=2,shape='mat'):
+def test(ts,cell_ids,t0,tf):
     '''
-
-    :param ts: all spikes
-    :param idx: cell ids of all spikes
-    :param events: any event, (usually breath on)
-    :param max_time:
-    :param event_window:
-    :param shape:'mat' or 'ravel' - mat gives an array [t,presynaptic, post synaptic]. ravel gives a matric: [t, comparison id]
-    :return: ccg_out -
+    This takes some time, and requires a good bit of memory.
+    Gets all the spiketimes, jitters with 10ms uniform random, computes
+    the true cross ISI distribution, and computes the jittered ISI distribution
+    :param ts:
+    :param cell_ids:
+    :param t0:
+    :param tf:
+    :return:
     '''
+    hist_bins = np.arange(-.05,.05,.001)
+    idx = np.logical_and(ts>t0,ts<tf)
+    ts_slice = ts[idx]
+    cid_slice = cell_ids[idx]
+    n_cells = len(np.unique(cell_ids))
 
-    jitterwindow=25
+    eps = np.random.uniform(-0.01,0.01,size=len(ts_slice))
+    ts_j = ts_slice + eps
 
-    sub_ts = ts[ts<max_time]
-    events = events[events>5]
-    bt,cell_id,bins = proc.bin_trains(ts,idx,max_time=max_time,binsize=0.001)
-    T,T_bins = proc.raster2tensor(bt,bins,events,pre=event_window/2,post=event_window/2)
-    # triangle function
-    n_t = T.shape[0]
-    t = np.arange(-(n_t-1),(n_t-1))
-    theta = n_t-np.abs(t)
-    del t
-    NFFT = int(nextpow2(2*n_t))
-    target = np.array([int(i) for i in NFFT/2+np.arange((-n_t+2),n_t)])
+    # Create a dict so we only compute the spiketrains once:
+    s_dict = {x:ts_slice[cid_slice==x] for x in np.unique(cell_ids)}
+    s_dict_j = {x:ts_j[cid_slice==x] for x in np.unique(cell_ids)}
 
-    FR = np.mean(bt,axis=1)*1000
+    out_mat = np.zeros([n_cells,n_cells,len(hist_bins)-1])
 
-    n_unit = FR.shape[0]
+    for ii in tqdm(range(n_cells)):
+        x = s_dict[ii]
+        x_j = s_dict_j[ii]
+        for jj in range(n_cells):
+            # Skip if comparing same cell or if already computed
+            if jj<=ii:
+                continue
+            y = s_dict[jj]
+            y_j = s_dict_j[jj]
 
-    ncomparisons = int((n_unit**2 - n_unit)/2)+1
-    # Preallocate for time
-    if shape =='ravel':
-        ccg_out = np.zeros([len(theta),ncomparisons])
-    elif shape == 'mat':
-        ccg_out = np.zeros([len(theta),n_unit,n_unit])
-        raw_ccg = np.zeros_like(ccg_out)
+            ISI = np.subtract.outer(x,y).ravel()
+            ISI = ISI[np.abs(ISI)<.05]
 
-    # Calculate CCG for all cross correlations
-    count = -1
-    pre_synaptic = []
-    post_synaptic =[]
-    for ii in tqdm(np.arange(n_unit-1)): # V1 cell
-        t1 = T[:, ii, :]
-        for jj in np.arange(ii+1,n_unit):  # V2 cell
-            pre_synaptic.append(cell_id[ii])
-            post_synaptic.append(cell_id[jj])
-            t2 = T[:, jj, :]
-            count+=1
-            if FR[ii]>2 and FR[jj]>2:
+            ISI_j = np.subtract.outer(x_j,y_j).ravel()
+            ISI_j = ISI_j[np.abs(ISI_j)<.05]
 
 
-                # ccg =np.mean(scipy.signal.fftconvolve(t1,t2),axis=1)
+            hist_true=  np.histogram(ISI,hist_bins)[0]
+            hist_j=  np.histogram(ISI_j,hist_bins)[0]
 
-                ccg = xcorrfft(t1,t2,NFFT)
-                ccg = np.squeeze(np.nanmean(ccg[:, target], axis=0))
+            hist_d = hist_true-hist_j
+            out_mat[ii,jj,:] = hist_d
+    return(hist_bins,out_mat)
 
-                tt1 = jitter(t1,jitterwindow)
-                tt2 = jitter(t2,jitterwindow)
-                tempjitter = xcorrfft(tt1,tt2,NFFT)
-                tempjitter = np.squeeze(np.nanmean(tempjitter[:, target], axis=0))
-                if shape == 'mat':
-                    ccg_out[:, ii, jj] = (ccg - tempjitter) / np.multiply(np.sqrt(FR[ii] * FR[jj]), theta)
-                    raw_ccg[:,ii,jj] = ccg / np.multiply(np.sqrt(FR[ii] * FR[jj]), theta)
-                elif shape == 'ravel':
-                    ccg_out[:,count] = (ccg - tempjitter) / np.multiply(np.sqrt(FR[ii] * FR[jj]), theta)
-                    raw_ccg[:,count] = ccg / np.multiply(np.sqrt(FR[ii] * FR[jj]), theta)
 
-    pre_synaptic = np.array(pre_synaptic)
-    post_synaptic = np.array(post_synaptic)
-    return(ccg_out,raw_ccg,pre_synaptic,post_synaptic)
+def test2(ts,cell_ids,t0,tf):
+    idx = np.logical_and(ts>t0,ts<tf)
+    ts_slice = ts[idx]
+    cid_slice = cell_ids[idx]
+    n_cells = len(np.unique(cell_ids))
 
+    # Jitter
+    eps = np.random.uniform(-0.01,0.01,size=len(ts_slice))
+    ts_j = ts_slice + eps
+
+    raster_true,cc1,bins = proc.bin_trains(ts_slice,cid_slice,max_time = tf,start_time=t0,binsize=0.001)
+    raster_jit,cc1,bins = proc.bin_trains(ts_j,cid_slice,max_time = tf,start_time=t0,binsize=0.001)
+
+    out_true = np.zeros([n_cells,n_cells,200])
+    out_jit = np.zeros([n_cells,n_cells,200])
+    for ii in tqdm(cc1):
+        x = raster_true[ii,:]
+        x_j = raster_jit[ii,:]
+        FR_i  = np.mean(x)*1000
+        for jj in cc1:
+            if jj>=ii:
+                continue
+            y = raster_true[jj, :]
+            y_j = raster_jit[jj, :]
+            FR_j = np.mean(y) * 1000
+            # x = (x - np.mean(x)) / (np.std(x) * len(x))
+            # y = (y - np.mean(y)) / (np.std(y))
+            CCG_true = scipy.signal.correlate(x,y,mode='full')
+            # x_j = (x_j - np.mean(x_j)) / (np.std(x_j) * len(x_j))
+            # y_j = (y_j - np.mean(y_j)) / (np.std(y_j))
+            CCG_jit = scipy.signal.correlate(x_j,y_j,mode='full')
+            lags = np.arange(-len(x) + 1, len(x))/1000 # in s
+
+            ctr = int(len(lags)/2)
+            lags = lags[ctr-100:ctr+100]
+            CCG_true = CCG_true[ctr-100:ctr+100]/(np.sqrt(FR_i*FR_j))
+            CCG_jit = CCG_jit[ctr-100:ctr+100]/(np.sqrt(FR_i*FR_j))
+            out_true[ii,jj,:] = CCG_true
+            out_jit[ii, jj, :] = CCG_jit
+    return(lags,out_true,out_jit)
+
+
+# ======================= Below here is the old Xioawen Jia code ====================== #
 
 def get_ccg_peaks(corrected_ccg,thresh = 7,shape='mat'):
     '''
@@ -251,6 +168,7 @@ def get_ccg_peaks(corrected_ccg,thresh = 7,shape='mat'):
 
     return(exc_connx,inh_connx)
 
+
 def to_graph(exc_connx,inh_connx):
 
     exc_connx = exc_connx.astype('int')
@@ -263,6 +181,7 @@ def to_graph(exc_connx,inh_connx):
 
     graph = exc_connx+inh_connx
     return(graph)
+
 
 def to_delay_graph(graph,ccg):
     delay_graph = np.zeros_like(graph)
@@ -277,8 +196,6 @@ def to_delay_graph(graph,ccg):
     return(delay_graph)
 
 
-
-
 def extract_ccg(graph,ccg):
     connect_graph = np.abs(graph)
     cc1,cc2 = np.where(connect_graph)
@@ -291,4 +208,19 @@ def extract_ccg(graph,ccg):
     return(ccg_examples,tvec)
 
 
+if __name__=='__main__':
+    print("THIS IS JUST A TEST")
+    p_save = '/active/ramirez_j/ramirezlab/nbush/projects/dynaresp/results'
 
+
+    t0 = 10
+    tf = 250
+    dat = utils.load_mono_gate('m2021-48','g0')
+    prb = dat['imec0']
+    spikes,metrics = utils.prb_to_spikes(prb)
+    ts = spikes['ts'].values
+    cell_ids = spikes['cell_id'].values
+
+    CCG = test2(ts, cell_ids, t0, tf)
+
+    np.save(os.path.join(p_save,'ccg.npy'),CCG)

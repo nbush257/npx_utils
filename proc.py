@@ -427,6 +427,11 @@ def burst_stats_dia(integrated,sr,dia_thresh=1,rel_height=0.8):
     lips = lips.astype('int')
     rips = rips.astype('int')
 
+    #Remove onsets that are equal to offsets
+    to_keep =rips!=lips
+    lips = lips[to_keep]
+    rips = rips[to_keep]
+
     amp = np.zeros(len(lips))
     auc = np.zeros(len(lips))
     for ii,(lip,rip) in enumerate(zip(lips,rips)):
@@ -447,8 +452,8 @@ def burst_stats_dia(integrated,sr,dia_thresh=1,rel_height=0.8):
     dia_data['auc'] = auc
     dia_data['duration_sec'] = dur/sr
     dia_data['duration_samp'] = dur
-    dia_data['pk_samp'] = pks
-    dia_data['pk_time'] = pks/sr
+    dia_data['pk_samp'] = pks[to_keep]
+    dia_data['pk_time'] = pks[to_keep]/sr
     dia_data['postBI'] = np.hstack([lips_t[1:]-rips_t[:-1],[np.nan]])
     dia_df = pd.DataFrame(dia_data)
     dia_df = dia_df.eval('inst_freq=1/(duration_sec+postBI)')

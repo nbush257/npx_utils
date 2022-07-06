@@ -203,6 +203,7 @@ def filt_int_ds_dia(x,sr,ds_factor=10,rel_height=0.95):
     HR = get_hr(pulse/ds_factor,dia_df,sr_sub)
 
     # Normalize the integrated diaphragm to a z-score.
+    dia_df['amp_z'] = dia_df['amp']/np.std(dia_sub)
     dia_sub = dia_sub/np.std(dia_sub)
     print('Done processing diaphragm')
 
@@ -246,7 +247,8 @@ def main(fn,pleth_chan,dia_chan,ekg_chan,save_path):
     mmap,meta = load_mmap(fn)
     raw_dia,sr_dia = load_dia_emg(mmap,meta,dia_chan)
     dia_df,dia_sub,sr_dia_sub,HR,dia_filt = filt_int_ds_dia(raw_dia,sr_dia)
-    HR = extract_hr_channel(mmap,meta,ekg_chan)
+    if ekg_chan !=-1:
+        HR = extract_hr_channel(mmap,meta,ekg_chan)
 
     if pleth_chan<0:
         pleth = []
@@ -302,9 +304,9 @@ def main(fn,pleth_chan,dia_chan,ekg_chan,save_path):
 @click.argument('fn')
 @click.option('-p','--pleth_chan','pleth_chan',default=0)
 @click.option('-d','--dia_chan','dia_chan',default=1)
-@click.option('-d','--ekg_chan','dia_chan',default=4)
+@click.option('-e','--ekg_chan','ekg_chan',default=4)
 @click.option('-s','--save_path','save_path',default=None)
-def batch(fn,pleth_chan,dia_chan,ekg_chan,save_path):
+def batch(fn,pleth_chan,dia_chan,save_path,ekg_chan):
     '''
     Set pleth chan to -1 if no pleth is recorded.
     :param fn:
@@ -337,7 +339,7 @@ def batch(fn,pleth_chan,dia_chan,ekg_chan,save_path):
                         print('='*50)
     else:
         root = os.path.split(fn)[0]
-        main(fn, pleth_chan, dia_chan, root)
+        main(fn, pleth_chan, dia_chan, ekg_chan,root)
         if pleth_chan>=0:
             matlab_cmd_string = "matlab -r -nosplash -nodesktop -nojvm bm_mat_proc('" + fn + "')"
             os.system(matlab_cmd_string)
