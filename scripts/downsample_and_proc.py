@@ -172,6 +172,7 @@ def filt_int_ds_dia(x,sr,ds_factor=10,rel_height=0.95):
     :return:
     '''
     assert(type(ds_factor) is int)
+    print(f'Sampling rate is {sr}')
 
     #Remove the EKG artifact
     print('Removing the EKG...')
@@ -187,9 +188,15 @@ def filt_int_ds_dia(x,sr,ds_factor=10,rel_height=0.95):
     # Use medfilt to get the smoothed rectified EMG
     print('Smoothing the rectified trace...')
 
-    dd = median_filter(np.abs(dia_filt),int(sr*.05)+1)
+    window_length = int(0.05*np.round(sr))+1
+    if window_length%2==0:
+        window_length+=1
+    dd = median_filter(np.abs(dia_filt),window_length)
     # Smooth it out a little more
-    dia_smooth = sig.savgol_filter(dd,window_length=int(0.01*sr)+1,polyorder=1)
+    window_length = int(0.01*np.round(sr))+1
+    if window_length%2==0:
+        window_length+=1
+    dia_smooth = sig.savgol_filter(dd,window_length=window_length,polyorder=1)
 
     # Downsample because we don't need this at the original smapling rate
     dia_sub = dia_smooth[::ds_factor]
@@ -325,18 +332,18 @@ def batch(fn,pleth_chan,dia_chan,save_path,ekg_chan):
                 for ff in flist:
                     fname = os.path.join(root,ff)
                     print(fname)
-                    try:
-                        main(fname,pleth_chan,dia_chan,ekg_chan,root)
-                        if pleth_chan>=0:
-                            matlab_cmd_string = "matlab -r -nosplash -nodesktop -nojvm bm_mat_proc('" + fname + "')"
-                            os.system(matlab_cmd_string)
-                        else:
-                            print('No pleth signal so not performing BM')
+                    # try:
+                    main(fname,pleth_chan,dia_chan,ekg_chan,root)
+                    if pleth_chan>=0:
+                        matlab_cmd_string = "matlab -r -nosplash -nodesktop -nojvm bm_mat_proc('" + fname + "')"
+                        os.system(matlab_cmd_string)
+                    else:
+                        print('No pleth signal so not performing BM')
 
-                    except:
-                        print('='*50)
-                        print(f'Failure on file {fname}')
-                        print('='*50)
+                    # except:
+                    #     print('='*50)
+                    #     print(f'Failure on file {fname}')
+                    #     print('='*50)
     else:
         root = os.path.split(fn)[0]
         main(fn, pleth_chan, dia_chan, ekg_chan,root)
