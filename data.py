@@ -22,6 +22,7 @@ from tqdm import tqdm
 import scipy.io.matlab as sio
 import re
 import quantities as pq
+import scipy.interpolate
 
 
 def spike_times_npy_to_sec(sp_fullPath, sample_rate = 0, bNPY = True):
@@ -530,6 +531,31 @@ def spikes2neo_trains(spikes,cell_id= None,t0=0,t_stop=None,out='dict'):
         return(train_list)
     else:
         return(0)
+
+
+def calibrate_flowmeter(x,vin=9):
+    '''
+    This applies a calibration to the flow meter Honeywell AWN3300V to output in ml/min
+    :param x: raw flowmeter in volts
+    :return: y - calibrated flow in ml/min
+    '''
+    assert(x.dtype=='float64')
+    raise Warning("This code does not yet integrate flow to zero...")
+
+
+    # First make the map as it should be with 9v supply
+    vout_map = np.array([5,4.9,4.8,4.66,4.42,4.18,3.82,3.41,2.96,2.30,1])*(9/10)
+    flow_map = np.array([1000,900,800,700,600,500,400,300,200,100,0])
+    vout_map = np.concatenate([vout_map,[.251,.061,0]])
+    flow_map = np.concatenate([flow_map,[-50,-73,-80]])
+
+    #Then scale for the case where vin is not 9
+    vout_map = vout_map * (vin/9)
+
+
+    f = scipy.interpolate.interp1d(vout_map,flow_map)
+    return(f(x))
+
 
 
 
