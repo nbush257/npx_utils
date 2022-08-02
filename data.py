@@ -198,9 +198,9 @@ def get_concatenated_spikes(ks_dir, use_label='intersect'):
 
     idx = np.load(f'{ks_dir}/spike_clusters.npy').ravel()
     try:
-        metrics = pd.read_csv(f'{ks_dir}/metrics.csv', index_col=0)
+        metrics = pd.read_csv(f'{ks_dir}/metrics.csv')
     except:
-        metrics = pd.read_csv(f'{ks_dir}/waveform_metrics.csv', index_col=0)
+        metrics = pd.read_csv(f'{ks_dir}/waveform_metrics.csv',)
     depths = np.load(f'{ks_dir}/channel_positions.npy')[:, 1]
     dd = pd.DataFrame()
     dd['peak_channel'] = np.arange(len(depths))
