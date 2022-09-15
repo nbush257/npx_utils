@@ -535,19 +535,17 @@ def spikes2neo_trains(spikes,cell_id= None,t0=0,t_stop=None,out='dict'):
 
 def calibrate_flowmeter(x,vin=9):
     '''
-    This applies a calibration to the flow meter Honeywell AWN3300V to output in ml/min
+    This applies a calibration to the flow meter Honeywell AWN3303V to output in ml/min
     :param x: raw flowmeter in volts
     :return: y - calibrated flow in ml/min
     '''
     assert(x.dtype=='float64')
-    raise Warning("This code does not yet integrate flow to zero...")
-
+    # raise Warning("This code does not yet integrate flow to zero..."
 
     # First make the map as it should be with 9v supply
-    vout_map = np.array([5,4.9,4.8,4.66,4.42,4.18,3.82,3.41,2.96,2.30,1])*(9/10)
-    flow_map = np.array([1000,900,800,700,600,500,400,300,200,100,0])
-    vout_map = np.concatenate([vout_map,[.251,.061,0]])
-    flow_map = np.concatenate([flow_map,[-50,-73,-80]])
+    vout_map = np.array([5,4.82,4.67,4.42,3.96,3.00,2.03,1.62,1.35,1.15,1])*(9/10)
+
+    flow_map = np.array([1000,800,650,400,200,0,-200,-400,-600,-800,-1000])
 
     #Then scale for the case where vin is not 9
     vout_map = vout_map * (vin/9)
