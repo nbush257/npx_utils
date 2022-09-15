@@ -23,7 +23,7 @@ import readSGLX
 import numpy as np
 import scipy.signal as sig
 import scipy.io.matlab as sio
-import proc
+import proc,data
 from pathlib import Path
 import click
 from sklearn.mixture import BayesianGaussianMixture
@@ -262,7 +262,9 @@ def main(fn,pleth_chan,dia_chan,ekg_chan,save_path):
         sr_pleth = sr_dia_sub
     else:
         pleth,sr_pleth = load_ds_pleth(mmap,meta,pleth_chan)
-        pleth = pleth/np.std(pleth)
+        # pleth = pleth/np.std(pleth)
+        print('Using flowmeter calibrations')
+        pleth = data.calibrate_flowmeter(pleth)
 
 
 
