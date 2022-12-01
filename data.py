@@ -142,6 +142,21 @@ def get_ni_analog(ni_bin_fn, chan_id):
     return(analog_dat)
 
 
+def get_imec_analog(imec_bin_fn,chan_id):
+    '''
+    Convenience function to load in an imce analog channel
+    :param imec_bin_fn: filename to load from
+    :param chan_id: channel index to load
+    :return: analog_dat
+    '''
+    meta = readSGLX.readMeta(Path(imec_bin_fn))
+    bitvolts = readSGLX.Int2Volts(meta)
+    imec_dat = readSGLX.makeMemMapRaw(imec_bin_fn,meta)
+    analog_dat = imec_dat[chan_id]*bitvolts
+
+    return(analog_dat)
+
+
 
 def get_ni_bin_from_ks_dir(ks_dir,search_p = None):
     '''
@@ -541,18 +556,19 @@ def calibrate_flowmeter(x,vin=9):
     '''
     assert(x.dtype=='float64')
     # raise Warning("This code does not yet integrate flow to zero..."
+    v_calibrated=9.58 # NEB 2022-10-07
+    # First make the map as it is calibrated with 9.58v supply (NEB 2022-10-07)
+    vout_map = np.array([1.5944,1.6923,1.7822,1.9068,2.0688,2.2803,2.5628,2.8907,3.0907,3.2433,3.3619,3.448,3.5321])
 
-    # First make the map as it should be with 9v supply
-    vout_map = np.array([5,4.82,4.67,4.42,3.96,3.00,2.03,1.62,1.35,1.15,1])*(9/10)
 
-    flow_map = np.array([1000,800,650,400,200,0,-200,-400,-600,-800,-1000])
+    flow_map = np.array([300,250,200,150,100,50,0,-50,-100,-150,-200,-250,-300])
 
     #Then scale for the case where vin is not 9
-    vout_map = vout_map * (vin/9)
+    vout_map = vout_map * (vin/v_calibrated)
 
 
-    f = scipy.interpolate.interp1d(vout_map,flow_map)
-    return(f(x))
+    f = scipy.interpolate.interp1d(vout_map,flow_map,fill_value='extrapolate')
+    return(-f(x))
 
 
 

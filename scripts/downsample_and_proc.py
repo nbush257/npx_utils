@@ -246,7 +246,7 @@ def extract_hr_channel(mmap,meta,ekg_chan=4):
 
 
 
-def main(fn,pleth_chan,dia_chan,ekg_chan,save_path):
+def main(fn,pleth_chan,dia_chan,ekg_chan,v_in,save_path):
 
     if save_path is None:
         save_path = os.path.split(fn)[0]
@@ -264,7 +264,7 @@ def main(fn,pleth_chan,dia_chan,ekg_chan,save_path):
         pleth,sr_pleth = load_ds_pleth(mmap,meta,pleth_chan)
         # pleth = pleth/np.std(pleth)
         print('Using flowmeter calibrations')
-        pleth = data.calibrate_flowmeter(pleth)
+        pleth = data.calibrate_flowmeter(pleth,vin=v_in)
 
 
 
@@ -314,8 +314,9 @@ def main(fn,pleth_chan,dia_chan,ekg_chan,save_path):
 @click.option('-p','--pleth_chan','pleth_chan',default=0)
 @click.option('-d','--dia_chan','dia_chan',default=1)
 @click.option('-e','--ekg_chan','ekg_chan',default=4)
+@click.option('-v','--v_in','v_in',default=9,type=float)
 @click.option('-s','--save_path','save_path',default=None)
-def batch(fn,pleth_chan,dia_chan,save_path,ekg_chan):
+def batch(fn,pleth_chan,dia_chan,save_path,v_in,ekg_chan):
     '''
     Set pleth chan to -1 if no pleth is recorded.
     :param fn:
@@ -335,7 +336,7 @@ def batch(fn,pleth_chan,dia_chan,save_path,ekg_chan):
                     fname = os.path.join(root,ff)
                     print(fname)
                     # try:
-                    main(fname,pleth_chan,dia_chan,ekg_chan,root)
+                    main(fname,pleth_chan,dia_chan,ekg_chan,v_in,root)
                     if pleth_chan>=0:
                         matlab_cmd_string = "matlab -nosplash -nodesktop -nojvm -r bm_mat_proc('" + fname + "')"
                         os.system(matlab_cmd_string)
@@ -348,7 +349,7 @@ def batch(fn,pleth_chan,dia_chan,save_path,ekg_chan):
                     #     print('='*50)
     else:
         root = os.path.split(fn)[0]
-        main(fn, pleth_chan, dia_chan, ekg_chan,root)
+        main(fn, pleth_chan, dia_chan, ekg_chan,v_on,root)
         if pleth_chan>=0:
             matlab_cmd_string = "matlab -nosplash -nodesktop -nojvm -r bm_mat_proc('" + fn + "')"
             os.system(matlab_cmd_string)
