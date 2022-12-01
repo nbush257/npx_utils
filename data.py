@@ -156,6 +156,7 @@ def get_imec_analog(imec_bin_fn,chan_id,t0,tf):
     bitvolts = readSGLX.Int2Volts(meta)
     imec_dat = readSGLX.makeMemMapRaw(imec_bin_fn,meta)
     analog_dat = imec_dat[chan_id,s0:sf]*bitvolts
+    tvec = tvec[:analog_dat.shape[1]]
 
     return(tvec,analog_dat)
 
