@@ -142,7 +142,7 @@ def get_ni_analog(ni_bin_fn, chan_id):
     return(analog_dat)
 
 
-def get_imec_analog(imec_bin_fn,chan_id):
+def get_imec_analog(imec_bin_fn,chan_id,t0,tf):
     '''
     Convenience function to load in an imce analog channel
     :param imec_bin_fn: filename to load from
@@ -150,11 +150,14 @@ def get_imec_analog(imec_bin_fn,chan_id):
     :return: analog_dat
     '''
     meta = readSGLX.readMeta(Path(imec_bin_fn))
+    sr = readSGLX.SampRate(meta)
+    s0,sf = (int(t0*sr),int(tf*sr))
+    tvec = np.arange(t0,tf,1/sr)
     bitvolts = readSGLX.Int2Volts(meta)
     imec_dat = readSGLX.makeMemMapRaw(imec_bin_fn,meta)
-    analog_dat = imec_dat[chan_id]*bitvolts
+    analog_dat = imec_dat[chan_id,s0:sf]*bitvolts
 
-    return(analog_dat)
+    return(tvec,analog_dat)
 
 
 
