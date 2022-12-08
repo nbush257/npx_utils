@@ -14,6 +14,8 @@ import scipy.ndimage
 import elephant
 import quantities as pq
 import warnings
+
+
 sys.path.append('../../')
 sys.path.append('../')
 sys.path.append('.')
@@ -641,7 +643,6 @@ def get_coherence(ts,x,x_sr,t0,tf):
     return(coh,sfc,freqs)
 
 
-
 def get_coherence_all(spikes,x,x_sr,t0,tf,method='static'):
     '''
     wrapper to get_coherence to run on all cells in spikes
@@ -885,9 +886,77 @@ def recompute_apneas(breaths,aux,thresh=3):
     return(temp)
 
 
+def remap_time_basis(x,x_t,y_t):
+    '''
+    Convinience function to map an analog signal x into the time
+    basis for another signal y.
+    ex: x is phase, y is the PCA decomposition. This allows you to get the phase value for
+    each sample in the PCA time
+    :param x: Analog signal to change time basis (1D numpy array)
+    :param x_t: Time basis of original analog signal (1D numpy array)
+    :param y_t: Time basis of target signal (1D numpy array)
+    :return: x_mapped - x in the time basis of y (1D numpy array)
+    '''
+    assert(len(x)==len(x_t))
+    idx = np.searchsorted(x_t,y_t)-1
+    return(x[idx])
+
+def compute_phase_exogenous_time(breaths,y_t):
+    '''
+    Computes phi in the given time basis y_t.
+    Useful for mapping phi into PCA decomposition
+    Considers breath onset to be phi=0, breath offset to be phi=pi
+    :param breaths: A "breaths" data frame with the fields "on_sec" and "off_sec"
+    :param y_t: the time basis to map phase into. (1D numpy array)
+    :return: phi_out - phase in provided time basis (1D numpy array)
+    '''
+    phi_t,phi = calc_dia_phase(breaths['on_sec'].values,breaths['off_sec'].values)
+    phi_out = remap_time_basis(phi,phi_t,y_t)
+    return(phi_out)
 
 
+def compute_PCA_speed(X,n = 3):
+    '''
+    Compute the euclidean speed through PCA space
+    :param X: PCA decompositions (2D numpy array: N_timepoints x N_dims)
+    :param n: number of dimensions to use (int)
+    :return: D - 1D numpy array of PCA speed
+    '''
+    if X.shape[0]<=X.shape[1]:
+        raise Warning(f'Number of timepoints:{X.shape[0]} is fewer than number of dimensions:{X.shape[1]}. Confirm you do not need to transpose the matrix')
+    X_s = X[:,:n]
+    X_sd = np.diff(X_s,axis=0)
+    D = np.concatenate([[0], np.sqrt(np.sum(X_sd ** 2, axis=1))])
+    return(D)
 
 
-
+def compute_speed_by_phase(X,X_t,breaths,t0,tf,nbins=50,n=3,wrap=True,norm=False):
+    '''
+    Computes PCA speed as a function of breathing phase
+    :param X: PCA decomposition (2D numpy array [n_time x n_dims]
+    :param X_t: Time basis of PCA decomposition (1D numpy array  [n_time])
+    :param breaths: A breaths dataframe
+    :param t0: first time to compute speed over (i.e., to compute on a sub-slice of available data)
+    :param tf: last time to compute speed over
+    :param nbins: number of phase bins to compute (i.e., granularity of the phase average)
+    :param n: number of dims of PCA to compute speed over (default=3)
+    :param wrap: Wrap to make polar plotting easier - Boolean default=True
+    :param norm: Output a maximum normalized speed - Boolean default= False
+    :return: bins,speed
+    '''
+    Xd = compute_PCA_speed(X,n=n)
+    phi = compute_phase_exogenous_time(breaths,X_t)
+    s0,sf = np.searchsorted(X_t,(t0,tf))
+    prior,bins = np.histogram(phi[s0:sf],nbins)
+    likli=[]
+    post,bins = np.histogram(phi[s0:sf],weights=Xd[s0:sf],bins=bins)
+    likli.append(post/prior)
+    likli = np.array(likli).ravel()
+    bins = bins[1:]-np.mean(np.diff(bins))
+    if wrap:
+        bins = np.concatenate([bins, [bins[0]]])
+        likli = np.concatenate([likli, [likli[0]]])
+    if norm:
+        likli = likli/np.max(np.abs(likli),0)
+    return(bins,likli)
 
