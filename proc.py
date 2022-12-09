@@ -853,16 +853,16 @@ def is_mod_v2(ts, events, pre_win=-0.1, post_win=0.1, binsize=0.01, thresh=2):
     return (mod)
 
 
-def recompute_apneas(breaths,aux,thresh=3):
+def recompute_apneas(breaths,aux,thresh=0.2):
     '''
     Recomputes the apnea detection. Overwrites apneas as eupneas
     :param breaths:
     :param aux:
     :return: breaths
     '''
-    win=401
-    if win%2==0:
-        win+=1
+    win = 101
+    if win % 2 == 0:
+        win += 1
     ons = breaths['on_sec']
     offs = ons[1:]
     ons = ons[:-1]
@@ -870,25 +870,54 @@ def recompute_apneas(breaths,aux,thresh=3):
     s0 = np.searchsorted(aux['t'], ons)
     sf = np.searchsorted(aux['t'], offs)
 
-    inhale_volumes = np.zeros(len(ons)+1)
-    exhale_volumes = np.zeros(len(ons)+1)
-
+    inhale_volumes = np.zeros(len(ons) + 1)
+    exhale_volumes = np.zeros(len(ons) + 1)
     for ii, (on, off) in enumerate(zip(s0, sf)):
         x_slice = aux['pleth'][on:off]
         inhale_volumes[ii] = np.trapz(x_slice[x_slice > 0])
         exhale_volumes[ii] = np.trapz(x_slice[x_slice < 0])
 
     temp = breaths.copy()
-    temp[temp['type']=='apnea']['type'] = 'eupnea'
+    temp.loc[temp['type']=='apnea','type'] = 'eupnea'
     temp['inhale_volumes'] = inhale_volumes
     temp['exhale_volumes'] = exhale_volumes
 
+    roll = temp.rolling(win + 1).median(center=True)
+    dum = temp['inhale_volumes'] / roll['inhale_volumes']
+    idx = np.where(dum < thresh)[0]
+    temp.loc[idx, 'type'] = 'apnea'
+    return(temp)
 
-    filt_breaths = temp-temp.rolling(win+1).median()
-    MAD = lambda x: np.nanmedian(np.abs(x - np.nanmedian(x)))
-    rolling_MAD = temp.rolling(window=win, center=True).apply(MAD)*thresh
-    idx = filt_breaths['inhale_volumes']<-rolling_MAD['inhale_volumes']
-    temp.loc[idx,'type'] = 'apnea'
+
+def compute_occlusions(breaths,aux,thresh=0.05):
+    '''
+    Find the time from dia onset to airflow
+    Useful for determining if there is occlusion
+    :param breaths: a breaths dataframe
+    :param aux: the auxiliary data
+    :param thresh: ratio of max flow to consider the flow open
+    :return:
+    '''
+    p_thresh = breaths['peak_inspiratory_flows'].mean() * thresh
+    ons = breaths['on_sec']
+    offs = ons[1:]
+    ons = ons[:-1]
+
+    s0 = np.searchsorted(aux['t'], ons)
+    sf = np.searchsorted(aux['t'], offs)
+
+    temp = breaths.copy()
+
+    t_to_inhale = np.zeros(len(ons) + 1)
+    for ii, (on, off) in enumerate(zip(s0, sf)):
+        x_slice = aux['pleth'][on:off]
+        cross = np.where(x_slice>p_thresh)[0]
+        if len(cross)==0:
+            t_to_inhale[ii] = np.nan
+        else:
+            idx = cross[0]
+            t_to_inhale[ii] = aux['t'][on:off][idx] - aux['t'][on]
+    temp['t_to_inhale_on_sec'] = t_to_inhale
     return(temp)
 
 
@@ -915,6 +944,7 @@ def compute_PCA_decomp(spikes,t0,tf,binsize=0.005,sigma=2):
     X = pca.transform(bb)
     X_bins = bins
     return(X,X_bins,pca)
+
 
 def remap_time_basis(x,x_t,y_t):
     '''
