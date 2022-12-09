@@ -14,6 +14,8 @@ import scipy.ndimage
 import elephant
 import quantities as pq
 import warnings
+from scipy.ndimage import gaussian_filter1d
+from sklearn.decomposition import PCA
 
 
 sys.path.append('../../')
@@ -603,10 +605,14 @@ def get_sta(x,tvec,ts,pre_win=0.5,post_win=None):
     st_sem = np.nanstd(spike_triggered,1)/np.sqrt(len(samps))
     st_std = np.nanstd(spike_triggered,1)
     win_t = np.linspace(-pre_win,post_win,(win_samps_pre+win_samps_post))
+    lb = st_average-st_sem
+    ub = st_average+st_sem
     sta = {'mean':st_average,
            'sem':st_sem,
            'std':st_std,
-           't':win_t}
+           't':win_t,
+           'lb':lb,
+           'ub':ub}
 
     return(sta)
 
@@ -886,6 +892,30 @@ def recompute_apneas(breaths,aux,thresh=3):
     return(temp)
 
 
+def compute_PCA_decomp(spikes,t0,tf,binsize=0.005,sigma=2):
+    '''
+    Compute the PCA decomposition on the observed spiking
+    :param spikes: A spikes dataframe
+    :param t0: first time to fit to
+    :param tf: last time to fit to
+    :param binsize: in seconds. default = 0.005
+    :param sigma: integer.. default=2
+    :return:
+    '''
+    raster, cell_id, bins = bin_trains(spikes['ts'], spikes['cell_id'], binsize=binsize)
+    aa = gaussian_filter1d(raster, sigma=sigma, axis=1)
+    aa[np.isnan(aa)] = 0
+    bb = np.sqrt(aa).T
+    bb[np.isnan(bb)] = 0
+    bb[np.isinf(bb)] = 0
+    s0 = np.searchsorted(bins, t0)
+    sf = np.searchsorted(bins, tf)
+    pca = PCA(10)
+    pca.fit(bb[s0:sf,:])
+    X = pca.transform(bb)
+    X_bins = bins
+    return(X,X_bins,pca)
+
 def remap_time_basis(x,x_t,y_t):
     '''
     Convinience function to map an analog signal x into the time
@@ -900,6 +930,7 @@ def remap_time_basis(x,x_t,y_t):
     assert(len(x)==len(x_t))
     idx = np.searchsorted(x_t,y_t)-1
     return(x[idx])
+
 
 def compute_phase_exogenous_time(breaths,y_t):
     '''
