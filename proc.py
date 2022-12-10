@@ -853,43 +853,7 @@ def is_mod_v2(ts, events, pre_win=-0.1, post_win=0.1, binsize=0.01, thresh=2):
     return (mod)
 
 
-def recompute_apneas(breaths,aux,thresh=0.2):
-    '''
-    Recomputes the apnea detection. Overwrites apneas as eupneas
-    :param breaths:
-    :param aux:
-    :return: breaths
-    '''
-    win = 101
-    if win % 2 == 0:
-        win += 1
-    ons = breaths['on_sec']
-    offs = ons[1:]
-    ons = ons[:-1]
-
-    s0 = np.searchsorted(aux['t'], ons)
-    sf = np.searchsorted(aux['t'], offs)
-
-    inhale_volumes = np.zeros(len(ons) + 1)
-    exhale_volumes = np.zeros(len(ons) + 1)
-    for ii, (on, off) in enumerate(zip(s0, sf)):
-        x_slice = aux['pleth'][on:off]
-        inhale_volumes[ii] = np.trapz(x_slice[x_slice > 0])
-        exhale_volumes[ii] = np.trapz(x_slice[x_slice < 0])
-
-    temp = breaths.copy()
-    temp.loc[temp['type']=='apnea','type'] = 'eupnea'
-    temp['inhale_volumes'] = inhale_volumes
-    temp['exhale_volumes'] = exhale_volumes
-
-    roll = temp.rolling(win + 1).median(center=True)
-    dum = temp['inhale_volumes'] / roll['inhale_volumes']
-    idx = np.where(dum < thresh)[0]
-    temp.loc[idx, 'type'] = 'apnea'
-    return(temp)
-
-
-def compute_occlusions(breaths,aux,thresh=0.05):
+def compute_occlusions_and_apnea(breaths,aux,thresh=0.1):
     '''
     Find the time from dia onset to airflow
     Useful for determining if there is occlusion
@@ -918,6 +882,9 @@ def compute_occlusions(breaths,aux,thresh=0.05):
             idx = cross[0]
             t_to_inhale[ii] = aux['t'][on:off][idx] - aux['t'][on]
     temp['t_to_inhale_on_sec'] = t_to_inhale
+
+    temp.loc[temp['type']=='apnea','type'] = 'eupnea'
+    temp.loc[temp['t_to_inhale_on_sec'].isna(),'type'] = 'apnea'
     return(temp)
 
 
