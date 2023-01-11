@@ -149,6 +149,8 @@ def get_imec_analog(imec_bin_fn,chan_id,t0,tf):
     :param chan_id: channel index to load
     :return: analog_dat
     '''
+    if type(chan_id) is int:
+        chan_id= [chan_id]
     meta = readSGLX.readMeta(Path(imec_bin_fn))
     sr = readSGLX.SampRate(meta)
     s0,sf = (int(t0*sr),int(tf*sr))
@@ -159,7 +161,6 @@ def get_imec_analog(imec_bin_fn,chan_id,t0,tf):
     tvec = tvec[:analog_dat.shape[1]]
 
     return(tvec,analog_dat)
-
 
 
 def get_ni_bin_from_ks_dir(ks_dir,search_p = None):
