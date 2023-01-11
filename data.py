@@ -8,6 +8,7 @@ import glob
 import pandas as pd
 import os
 import numpy as np
+import uuid
 try:
     from . import readSGLX as readSGLX
 except:
@@ -338,6 +339,45 @@ def load_filtered_spikes(ks2_dir,use_filters=True):
     return(spikes,metrics)
 
 
+def concatenate_probes(spikes_list,metrics_list,labels):
+    '''
+    concetanates spiking data from multiple probes into a single set of dataframes.
+    :param spikes_list: list of spike dataframes
+    :param metrics_list: list of metrics dataframes
+    :param labels: list of labels (suggested is ['imec0','imec1....]
+    :return: spikes,metrics - concatenated spikes and metrics dataframes
+    '''
+    n_probes = len(labels)
+    for ii in range(n_probes):
+        spikes_list[ii]['probe'] = labels[ii]
+        metrics_list[ii]['probe'] = labels[ii]
+        metrics_list[ii]['uuid'] = [uuid.uuid4() for _ in range(len(metrics_list[ii].index))]
+        spikes_list[ii] = spikes_list[ii].merge(metrics_list[ii][['cluster_id','uuid']],on='cluster_id')
+
+    spikes = pd.concat(spikes_list).reset_index(drop=True)
+    metrics = pd.concat(metrics_list).sort_values(['probe','depth']).reset_index(drop=True).reset_index().rename(columns={'index':'cell_id'})
+
+    spikes = spikes.drop('cell_id',axis=1)
+    spikes = spikes.merge(metrics[['uuid','cell_id']],on='uuid').sort_values('ts').reset_index(drop=True)
+    return(spikes,metrics)
+
+
+def load_concatenated_spikes(gate_dir):
+    '''
+    Given the directory of a gate (which should include the subsequent ks2 folders)
+    return the concatenated spike dataframes. This uses the standard battery of filters to exclude data, which may
+    or may not be appropriate.
+    :param gate_dir: Path object to the gate directory
+    :return: spikes,metrics - dataframes with info on all the spikes.
+    '''
+    ks2_paths = list(gate_dir.rglob('imec*_ks2'))
+    ks2_paths.sort()
+    spikes_list, metrics_list = map(list, zip(*[load_filtered_spikes(x) for x in ks2_paths]))
+    labels = [re.search('imec\d', str(x)).group() for x in ks2_paths]
+    spikes,metrics = concatenate_probes(spikes_list,metrics_list,labels)
+    return(spikes,metrics)
+
+
 def create_spykes_pop(spikes,start_time=0,stop_time=np.inf):
     '''
     Convert a spikes dataframe to a Spykes neuron list and population object
@@ -393,24 +433,31 @@ def get_event_triggered_st(ts,events,idx,pre_win,post_win):
     return(pop)
 
 
-def load_aux(ks_dir,t=0):
+def load_aux(load_dir,t=0,mode='ks'):
     '''
     loads in the standard auxiliarry data from the neuropixel exp[eriments
     :param ks_dir: directory of the sorted data
     :param t: The trial index
+    :param mode: string determines wether you have passed a kilosort directory or a gate directory (default=kilosort directory)
     :return: epochs,breaths,aux_dat
     '''
-    aux_dir = os.path.join(ks_dir,'../../')
+    if mode=='ks':
+        aux_dir = os.path.join(load_dir,'../../')
+    elif mode=='gate':
+        aux_dir = load_dir
+    else:
+        raise NotImplementedError('Please choose a mode ["ks","gate"]')
+
     epoch_list = glob.glob(os.path.join(aux_dir,'*epochs*.csv'))
     epoch_list.sort()
     if len(epoch_list) == 0:
         raise ValueError(f'No epoch csv found in {aux_dir}')
     if len(epoch_list)>1:
-        aux_dat = sio.loadmat(glob.glob(aux_dir+ '*tcat*aux*.mat')[0])
+        aux_dat = sio.loadmat(glob.glob(os.path.join(aux_dir,'*tcat*aux*.mat'))[0])
         try:
-            breaths = pd.read_csv(glob.glob(aux_dir + '*tcat*pleth*.csv')[0], index_col=0)
+            breaths = pd.read_csv(glob.glob(os.path.join(aux_dir,'*tcat*pleth*.csv'))[0], index_col=0)
         except:
-            breaths = pd.read_csv(glob.glob(aux_dir + '*tcat*.csv')[0], index_col=0)
+            breaths = pd.read_csv(glob.glob(os.path.join(aux_dir,'*tcat*.csv'))[0], index_col=0)
         epochs = pd.DataFrame()
         last_time =0
         mat_list = glob.glob(aux_dir+'*aux*.mat')
@@ -428,12 +475,12 @@ def load_aux(ks_dir,t=0):
 
             epochs = pd.concat([epochs,dum])
     else:
-        aux_dat = sio.loadmat(glob.glob(aux_dir + '*aux*.mat')[t])
-        epochs = pd.read_csv(glob.glob(aux_dir+'*epochs*.csv')[t])
+        aux_dat = sio.loadmat(glob.glob(os.path.join(aux_dir,'*aux*.mat'))[t])
+        epochs = pd.read_csv(glob.glob(os.path.join(aux_dir,'*epochs*.csv'))[t])
         try:
-            breaths = pd.read_csv(glob.glob(aux_dir+'*pleth*.csv')[t],index_col=0)
+            breaths = pd.read_csv(glob.glob(os.path.join(aux_dir,'*pleth*.csv'))[t],index_col=0)
         except:
-            breaths = pd.read_csv(glob.glob(aux_dir+'*stat*.csv')[t],index_col=0)
+            breaths = pd.read_csv(glob.glob(os.path.join(aux_dir,'*stat*.csv'))[t],index_col=0)
 
         if np.isnan(epochs['tf'].iloc[-1]):
             epochs['tf'].iloc[-1] = aux_dat['t'][-1][0]/60
