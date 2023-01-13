@@ -250,9 +250,11 @@ def get_concatenated_spikes(ks_dir, use_label='intersect'):
         kslabel = pd.read_csv(f'{ks_dir}/cluster_KSLabel.tsv', delimiter='\t')
         temp = pd.merge(grp,kslabel,how='inner',on='cluster_id')
         metrics = metrics.merge(grp,on='cluster_id')
+        metrics = metrics.merge(kslabel,on='cluster_id')
         temp.query('group=="good" & KSLabel=="good"',inplace=True)
         clu_list = temp['cluster_id']
         spikes = spikes[spikes['cluster_id'].isin(clu_list)]
+        metrics = metrics[metrics['cluster_id'].isin(clu_list)]
     else:
         raise NotImplementedError('Use a valid label filter[default,ks,intersect]')
 
@@ -273,18 +275,20 @@ def filter_by_metric(spikes,metrics,expression):
     '''
     clu_list = metrics.query(expression)['cluster_id']
     spikes = spikes[spikes['cluster_id'].isin(clu_list)]
-    return(spikes)
+    metrics = metrics[metrics['cluster_id'].isin(clu_list)]
+    return(spikes,metrics)
 
 
-def filter_by_spikerate(spikes,thresh = 100):
+def filter_by_spikerate(spikes,metrics, thresh = 100):
     '''
     remove units that have less than "thresh" spikes in the recording
 
     :return: spikes2
     '''
-    n_spikes = spikes.groupby('cell_id').count()['ts']
+    n_spikes = spikes.groupby('cluster_id').count()['ts']
     mask = n_spikes[n_spikes>thresh].index
-    spikes2 = spikes.loc[spikes['cell_id'].isin(mask)]
+    spikes2 = spikes.loc[spikes['cluster_id'].isin(mask)]
+    metrics = metrics.query('cluster_id in @mask')
     return(spikes2)
 
 
@@ -298,13 +302,13 @@ def filter_default_metrics(spikes,metrics):
     :param spikes:
     :return: filtered_spikes
     '''
-    spikes = filter_by_spikerate(spikes,100)
-    spikes = filter_by_metric(spikes,metrics,'isi_viol<2 ')
-    spikes = filter_by_metric(spikes,metrics,'amplitude_cutoff<0.1')
-    spikes = filter_by_metric(spikes,metrics,'presence_ratio>0.9')
+    spikes = filter_by_spikerate(spikes,metrics,100)
+    spikes,metrics = filter_by_metric(spikes,metrics,'isi_viol<2 ')
+    spikes,metrics = filter_by_metric(spikes,metrics,'amplitude_cutoff<0.1')
+    spikes,metrics = filter_by_metric(spikes,metrics,'presence_ratio>0.9')
     # spikes = filter_by_metric(spikes,metrics,'amplitude>150')
 
-    return(spikes)
+    return(spikes,metrics)
 
 
 def resort_by_depth(spikes):
@@ -334,7 +338,7 @@ def load_filtered_spikes(ks2_dir,use_filters=True):
     '''
     spikes,metrics = get_concatenated_spikes(ks2_dir)
     if use_filters:
-        spikes = filter_default_metrics(spikes,metrics)
+        spikes,metrics = filter_default_metrics(spikes,metrics)
     spikes = resort_by_depth(spikes)
     return(spikes,metrics)
 
