@@ -29,6 +29,7 @@ import click
 from sklearn.mixture import BayesianGaussianMixture
 from scipy.ndimage.filters import median_filter
 import pandas as pd
+import scipy
 
 
 
@@ -224,7 +225,7 @@ def make_save_fn(fn,save_path,save_name='_aux_downsamp'):
     save_fn = os.path.join(save_path,prefix+save_name+'.mat')
     return(save_fn,prefix)
 
-def extract_hr_channel(mmap,meta,ekg_chan=4):
+def extract_hr_channel(mmap,meta,ekg_chan=2):
     '''
     If the ekg is recorded on a separate channel, extract it here
     '''
@@ -245,8 +246,22 @@ def extract_hr_channel(mmap,meta,ekg_chan=4):
     return(aa)
 
 
+def extract_temp(mmap,meta,temp_chan=7):
+    bitvolts = readSGLX.Int2Volts(meta)
+    sr = readSGLX.SampRate(meta)
+    dat = mmap[temp_chan]*bitvolts
+    # 0v=25C, 2V = 45C, 100mv=1C
+    vout_map = [0,2]
+    temp_map = [25,45]
+    temp_f = scipy.interpolate.interp1d(vout_map, temp_map)
+    temp_out = temp_f(dat)
+    temp_out = scipy.signal.savgol_filter(temp_out,101,1)[::10]
+    return(temp_out)
 
-def main(fn,pleth_chan,dia_chan,ekg_chan,v_in,save_path):
+
+
+
+def main(fn,pleth_chan,dia_chan,ekg_chan,temp_chan,v_in,save_path):
 
     if save_path is None:
         save_path = os.path.split(fn)[0]
@@ -265,6 +280,11 @@ def main(fn,pleth_chan,dia_chan,ekg_chan,v_in,save_path):
         # pleth = pleth/np.std(pleth)
         print('Using flowmeter calibrations')
         pleth = data.calibrate_flowmeter(pleth,vin=v_in)
+
+    if temp_chan>0:
+        temperature = extract_temp(mmap,meta,temp_chan)
+    else:
+        temperature = []
 
 
 
@@ -288,6 +308,7 @@ def main(fn,pleth_chan,dia_chan,ekg_chan,v_in,save_path):
         'dia':dia_sub,
         'sr':sr_pleth,
         'hr_bpm':new_hr['hr'].values,
+        'temperature':temperature,
         't':t
     }
     save_fn,prefix = make_save_fn(fn,save_path)
@@ -311,12 +332,13 @@ def main(fn,pleth_chan,dia_chan,ekg_chan,v_in,save_path):
 
 @click.command()
 @click.argument('fn')
-@click.option('-p','--pleth_chan','pleth_chan',default=0)
-@click.option('-d','--dia_chan','dia_chan',default=1)
-@click.option('-e','--ekg_chan','ekg_chan',default=4)
+@click.option('-p','--pleth_chan','pleth_chan',default=5)
+@click.option('-d','--dia_chan','dia_chan',default=0)
+@click.option('-e','--ekg_chan','ekg_chan',default=2)
+@click.option('-t','--temp_chan','temp_chan',default=7)
 @click.option('-v','--v_in','v_in',default=9,type=float)
 @click.option('-s','--save_path','save_path',default=None)
-def batch(fn,pleth_chan,dia_chan,save_path,v_in,ekg_chan):
+def batch(fn,pleth_chan,dia_chan,save_path,v_in,ekg_chan,temp_chan):
     '''
     Set pleth chan to -1 if no pleth is recorded.
     :param fn:
@@ -336,7 +358,7 @@ def batch(fn,pleth_chan,dia_chan,save_path,v_in,ekg_chan):
                     fname = os.path.join(root,ff)
                     print(fname)
                     # try:
-                    main(fname,pleth_chan,dia_chan,ekg_chan,v_in,root)
+                    main(fname,pleth_chan,dia_chan,ekg_chan,temp_chan,v_in,root)
                     if pleth_chan>=0:
                         matlab_cmd_string = "matlab -nosplash -nodesktop -nojvm -r bm_mat_proc('" + fname + "')"
                         os.system(matlab_cmd_string)
@@ -349,7 +371,7 @@ def batch(fn,pleth_chan,dia_chan,save_path,v_in,ekg_chan):
                     #     print('='*50)
     else:
         root = os.path.split(fn)[0]
-        main(fn, pleth_chan, dia_chan, ekg_chan,v_on,root)
+        main(fn, pleth_chan, dia_chan, ekg_chan,temp_chan,v_on,root)
         if pleth_chan>=0:
             matlab_cmd_string = "matlab -nosplash -nodesktop -nojvm -r bm_mat_proc('" + fn + "')"
             os.system(matlab_cmd_string)
