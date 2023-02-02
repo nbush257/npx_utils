@@ -685,9 +685,10 @@ def get_coherence_all(spikes,x,x_sr,t0,tf,method='static'):
             coh.append(temp)
             cells.append(cell_id)
 
-        coh_df = pd.DataFrame()
-        coh_df['cell_id'] = cells
-        coh_df['coherence'] = coh
+    coh_df = pd.DataFrame()
+    coh_df['cell_id'] = cells
+    coh_df['coherence'] = coh
+    return(coh_df)
 
 
 def event_average_mod_depth(spikes,events,pre=0.25,post=0.5,method='sqrt'):
