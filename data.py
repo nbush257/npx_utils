@@ -382,6 +382,7 @@ def load_concatenated_spikes(gate_dir):
     return(spikes,metrics)
 
 
+
 def create_spykes_pop(spikes,start_time=0,stop_time=np.inf):
     '''
     Convert a spikes dataframe to a Spykes neuron list and population object
@@ -626,6 +627,45 @@ def calibrate_flowmeter(x,vin=9):
     f = scipy.interpolate.interp1d(vout_map,flow_map,fill_value='extrapolate')
     return(-f(x))
 
+def extract_digital_bit(bin_fn,bit_to_read):
+    '''
+    Return a vector of the value of a given bit for an entire recording.
+    :param bin_fn:
+    :param bit_to_read:
+    :return:
+    '''
+    meta = readSGLX.readMeta(Path(bin_fn))
+    mmap = readSGLX.makeMemMapRaw(Path(bin_fn), meta)
+    ftime = float(meta['fileTimeSecs'])
+    sRate = readSGLX.SampRate(meta)
+
+    last_samp = int(np.floor(sRate * ftime))
+    bit = readSGLX.ExtractDigital(mmap, 0, last_samp - 1, 0, [bit_to_read], meta).ravel()
+    bit =bit.astype('bool')
+    return(bit)
+
+def extract_digital_bit_dataframe(bin_fn,bit_to_read,active='HIGH'):
+    bit = extract_digital_bit(bin_fn,bit_to_read)
+    if active=="LOW":
+        bit = np.logical_not(bit)
+
+    bit_change = np.where(np.diff(bit) != 0)[0]
+    value_at_change = bit[bit_change]
+    high2low = bit_change[value_at_change]
+    low2high = bit_change[np.logical_not(value_at_change)]
+
+    df = pd.DataFrame()
+    if len(low2high) != len(high2low):
+        np.concatenate([high2low, len(bit)])  # add an offset at the end of the recording
+
+    durations = high2low - low2high
+    assert np.all(durations > 0), 'Offsets are not after onsets'
+
+    df['on'] = low2high
+    df['offs'] = high2low
+    df['duration'] = durations
+
+    return(df)
 
 
 
