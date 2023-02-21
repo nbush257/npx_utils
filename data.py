@@ -211,7 +211,7 @@ def get_concatenated_spikes(ks_dir, use_label='intersect'):
     else:
         print('NO SPIKETIMES_SEC FOUND. Converting and saving')
         t_samps = np.load(f'{ks_dir}/spike_times.npy').ravel()
-        ap_bin = glob.glob(f'{ks_dir}/../*.bin')[0]
+        ap_bin = glob.glob(f'{ks_dir}/../*ap.bin')[0]
         meta = readSGLX.readMeta(Path(ap_bin))
         spike_sr = readSGLX.SampRate(meta)
         ts = t_samps/spike_sr
@@ -366,7 +366,7 @@ def concatenate_probes(spikes_list,metrics_list,labels):
     return(spikes,metrics)
 
 
-def load_concatenated_spikes(gate_dir):
+def load_concatenated_probes(gate_dir):
     '''
     Given the directory of a gate (which should include the subsequent ks2 folders)
     return the concatenated spike dataframes. This uses the standard battery of filters to exclude data, which may
@@ -381,6 +381,33 @@ def load_concatenated_spikes(gate_dir):
     spikes,metrics = concatenate_probes(spikes_list,metrics_list,labels)
     return(spikes,metrics)
 
+
+def load_alf(alf_path, keep_good=True):
+    '''
+    Load the IBL pipeline alf folder in the same format as we loaded in previosly, giving us the spikes and metrics dataframes
+    May have some issues in the the fields in metrics is not all the same now.
+    '''
+    times = np.load(alf_path.joinpath('spikes.times.npy'))
+    clusters = np.load(alf_path.joinpath('spikes.clusters.npy'))
+    depths = np.load(alf_path.joinpath('spikes.depths.npy'))
+    uuids = pd.read_csv(alf_path.joinpath('clusters.uuids.csv'))
+    metrics = pd.read_csv(alf_path.joinpath('metrics.csv'), index_col=0)
+    metrics['uuid'] = uuids
+    spikes = pd.DataFrame()
+    spikes['ts'] = times
+    spikes['cluster_id'] = clusters
+    spikes['depth'] = depths
+    spikes = spikes.merge(metrics[['cluster_id', 'uuid']], on='cluster_id')
+
+    if keep_good:
+        use_uuid = metrics.query('label==1')['uuid']
+        spikes = spikes.query('uuid in @use_uuid')
+        metrics = metrics.query('uuid in @use_uuid')
+    spikes['cell_id'] = spikes['cluster_id']
+    spikes = resort_by_depth(spikes)
+    metrics = metrics.merge(spikes[['cell_id', 'uuid']].drop_duplicates(), on='uuid', how='inner')
+
+    return (spikes, metrics)
 
 
 def create_spykes_pop(spikes,start_time=0,stop_time=np.inf):
