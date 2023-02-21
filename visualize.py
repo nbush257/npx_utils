@@ -367,3 +367,168 @@ def plot_average_breaths_by_type(breaths,aux):
     plt.tight_layout()
 
 
+def plot_reset_curve(breaths,events,opto_color='#00b7ff',t0=0,tf=None,annotate=False):
+    if tf is None:
+        tf = breaths['on_sec'].max()
+    mean_IBI = breaths.query('on_sec>@t0 & on_sec<@tf')['IBI'].mean()
+    mean_dur = breaths.query('on_sec>@t0 & on_sec<@tf')['duration_sec'].mean()
+    xmax = []
+    ymax = []
+    for on_sec in np.random.uniform(low=t0, high=tf, size=(100,)):
+        last_breath = breaths.query('on_sec<@on_sec').iloc[-1]
+        next_breath = breaths.query('on_sec>@on_sec').iloc[0]
+
+        t_since_last_off = on_sec - last_breath['on_sec']
+        t_to_next_on = next_breath['on_sec'] - on_sec
+
+        ctrls, = plt.plot(t_since_last_off, t_to_next_on + t_since_last_off, 'ko', ms=3, alpha=0.5)
+
+
+    for on_sec in events:
+        last_breath = breaths.query('on_sec<@on_sec').iloc[-1]
+        next_breath = breaths.query('on_sec>@on_sec').iloc[0]
+
+        t_since_last_off = on_sec - last_breath['on_sec']
+        t_to_next_on = next_breath['on_sec'] - on_sec
+
+        stims, = plt.plot(t_since_last_off, t_to_next_on + t_since_last_off, 'o', color=opto_color, mec='k', mew=0)
+        xmax.append(t_since_last_off)
+        ymax.append(t_to_next_on+t_since_last_off)
+
+    xmax = max(xmax)
+    ymax = max(ymax)
+
+    plt.axvline(mean_dur, color='k', ls='--', lw=0.5)
+    plt.axhline(mean_IBI, color='k', ls='--', lw=0.5)
+
+    plt.plot([0, mean_dur + mean_IBI], [0, mean_IBI + mean_dur], color='tab:red')
+
+    plt.xlabel('Time since last breath onset (s)')
+    plt.ylabel('Total time between breaths (s)')
+
+    plt.xlim([0,xmax])
+    plt.ylim([0, ymax])
+
+    # Phase advance
+    pts = np.array([[mean_dur, mean_dur], [mean_IBI, mean_IBI], [mean_dur, mean_IBI]])
+    plt.fill_between(pts[:, 0], pts[:, 1], color='tab:green', alpha=0.3)
+
+    # Phase delay
+    pts = np.array([[mean_dur, mean_IBI], [mean_IBI, mean_IBI], [mean_IBI + mean_dur, mean_IBI + mean_dur],
+                    [mean_IBI + mean_dur, plt.gca().get_ylim()[1]], [mean_dur, plt.gca().get_ylim()[1]]])
+    plt.fill(pts[:, 0], pts[:, 1], color='tab:grey', alpha=0.3)
+
+    # Shorten inspiration
+    pts = np.array([[0, 0], [mean_dur, mean_dur], [mean_dur, mean_IBI], [0, mean_IBI]])
+    plt.fill(pts[:, 0], pts[:, 1], color='tab:purple', alpha=0.3)
+
+    # Prolong inspiration
+    pts = np.array(
+        [[0, mean_IBI], [mean_dur, mean_IBI], [mean_dur, plt.gca().get_ylim()[1]], [0, plt.gca().get_ylim()[1]]])
+    plt.fill(pts[:, 0], pts[:, 1], color='tab:orange', alpha=0.3)
+
+    if annotate:
+        plt.text(mean_dur, mean_dur / 2, 'inspiration\nduration', rotation=90)
+        plt.text(0, (mean_dur + mean_IBI) / 2, 'Shorten inspiration', ha='left')
+        plt.text(0, plt.gca().get_ylim()[1], 'Prolong inspiration', ha='left', va='top')
+        plt.text(mean_dur, (mean_dur + mean_IBI) / 2, 'Advance phase', ha='left', va='center')
+        plt.text(mean_dur, plt.gca().get_ylim()[1], 'Delay phase', ha='left', va='top')
+        plt.text((mean_dur + mean_IBI) / 2, (mean_dur + mean_IBI) / 2, 'Lower bound', color='tab:red', ha='left', va='top')
+        plt.legend([stims, ctrls], ['Stims', 'Random'])
+
+    sns.despine()
+
+
+def plot_reset_curve_normed(breaths,events,opto_color='#00b7ff',t0=0,tf=None,annotate=False,plot_tgl=True):
+    '''
+    Plots a reset curve in normalized time.
+    :param breaths:
+    :param events:
+    :param opto_color:
+    :param t0:
+    :param tf:
+    :param annotate:
+    :return: x_stim,y_stim,x_control,y_control
+    '''
+    if tf is None:
+        tf = breaths['on_sec'].max()
+    mean_IBI = breaths.query('on_sec>@t0 & on_sec<@tf')['IBI'].mean()
+    mean_dur = breaths.query('on_sec>@t0 & on_sec<@tf')['duration_sec'].mean()
+    x_stim = []
+    y_stim = []
+    x_control=[]
+    y_control= []
+    for on_sec in np.random.uniform(low=100, high=600, size=(100,)):
+        last_breath = breaths.query('on_sec<@on_sec').iloc[-1]
+        next_breath = breaths.query('on_sec>@on_sec').iloc[0]
+
+        t_since_last_on = on_sec - last_breath['on_sec']
+        cycle_duration = next_breath['on_sec'] - last_breath['on_sec']
+
+        if plot_tgl:
+            ctrls, = plt.plot(t_since_last_on / mean_IBI, cycle_duration / mean_IBI, 'ko', ms=3, alpha=0.5)
+        x_control.append(t_since_last_on/mean_IBI)
+        y_control.append(cycle_duration/mean_IBI)
+
+    for on_sec in events:
+        last_breath = breaths.query('on_sec<@on_sec').iloc[-1]
+        next_breath = breaths.query('on_sec>@on_sec').iloc[0]
+
+        t_since_last_on = on_sec - last_breath['on_sec']
+        cycle_duration = next_breath['on_sec'] - last_breath['on_sec']
+
+        if plot_tgl:
+            stims, = plt.plot(t_since_last_on / mean_IBI, cycle_duration / mean_IBI, 'o', color=opto_color, mec='k', mew=0)
+        x_stim.append(t_since_last_on/mean_IBI)
+        y_stim.append(cycle_duration/mean_IBI)
+
+    # Remap output data to arrays
+    x_stim = np.array(x_stim)
+    y_stim = np.array(y_stim)
+    x_control = np.array(x_control)
+    y_control = np.array(y_control)
+
+    # Skip plotting and just output data
+    if not plot_tgl:
+        return(x_stim,y_stim,x_control,y_control)
+
+
+    # Essential plot features
+    plt.axvline(mean_dur / mean_IBI, color='k', ls='--', lw=0.5)
+    plt.axhline(1, color='k', ls='--', lw=0.5)
+    plt.plot([0, 2], [0, 2], color='tab:red')
+    plt.xlabel('Stim time (normalized)')
+    plt.ylabel('Cycle duration (normalized)')
+    plt.xlim(0, 1.5)
+    plt.ylim(0, 2)
+    plt.yticks([0, 1, 2])
+    plt.xticks([0, 0.5, 1])
+
+    # Accessory plot features
+    if plot_tgl & annotate:
+        plt.text(0.01, 1.5, 'Prolong inspiration', ha='left', va='bottom', rotation=90)
+        plt.text(0.01, 0.01, 'Shorten inspiration', ha='left', va='bottom', rotation=90)
+        plt.text(mean_dur / mean_IBI + 0.01, mean_dur / mean_IBI + 0.05, 'Phase advance', ha='left', va='bottom',
+                 rotation=90)
+        plt.text(mean_dur / mean_IBI + 0.01, 1.5, 'Phase delay', ha='left', va='bottom', rotation=90)
+
+        plt.fill_between([0, mean_dur / mean_IBI], [0, mean_dur / mean_IBI], [1, 1], color='tab:purple', alpha=0.2)
+        plt.fill_between([0, mean_dur / mean_IBI], [1, 1], [2, 2], color='tab:green', alpha=0.2)
+        pts = np.array([[mean_dur / mean_IBI,1],[1,1],[1.5,1.5],[1.5,2],[mean_dur/mean_IBI,2]])
+        plt.fill(pts[:,0],pts[:,1],color='tab:orange',alpha=0.2)
+        # plt.fill_between([mean_dur / mean_IBI, 1], [1, 1], [2, 2], color='tab:orange', alpha=0.2)
+        plt.fill_between([mean_dur / mean_IBI, 1], [mean_dur / mean_IBI, 1], [1, 1], color='tab:grey', alpha=0.2)
+
+        plt.text(mean_dur / mean_IBI / 2, mean_dur / mean_IBI / 2 * 0.8, 'Lower bound', color='tab:red', rotation=26)
+
+        plt.text(mean_dur / mean_IBI / 2, plt.gca().get_ylim()[1], 'Inspiration', ha='center', va='top')
+        plt.text(mean_dur / mean_IBI + (1 - mean_dur / mean_IBI) / 2, plt.gca().get_ylim()[1], 'Expiration', ha='center',
+                 va='top')
+
+        plt.xlim(0, 1.5)
+        plt.ylim(0, 2)
+        plt.yticks([0, 1, 2])
+        plt.xticks([0, 0.5, 1,1.5])
+
+    sns.despine()
+    return(x_stim,y_stim,x_control,y_control)
