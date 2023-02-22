@@ -14,10 +14,10 @@ try:
 except:
     import readSGLX
 from pathlib import Path
-sys.path.append('../')
-sys.path.append(r'Y:\projects')
-sys.path.append('/active/ramirez_j/ramirezlab/nbush/projects')
-from utility.ephys.signal import binary_onsets
+# sys.path.append('../')
+# sys.path.append(r'Y:\projects')
+# sys.path.append('/active/ramirez_j/ramirezlab/nbush/projects')
+from signal_funcs import binary_onsets
 from spykes.plot import NeuroVis,PopVis
 from tqdm import tqdm
 import scipy.io.matlab as sio
