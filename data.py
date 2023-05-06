@@ -139,8 +139,10 @@ def get_ni_analog(ni_bin_fn, chan_id):
     bitvolts = readSGLX.Int2Volts(meta)
     ni_dat = readSGLX.makeMemMapRaw(ni_bin_fn,meta)
     analog_dat = ni_dat[chan_id]*bitvolts
+    sr = readSGLX.SampRate(meta)
+    tvec = np.linspace(0,len(analog_dat)/sr,len(analog_dat))
 
-    return(analog_dat)
+    return(tvec,analog_dat)
 
 
 def get_imec_analog(imec_bin_fn,chan_id,t0,tf):
