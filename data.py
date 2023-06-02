@@ -656,6 +656,7 @@ def calibrate_flowmeter(x,vin=9):
     f = scipy.interpolate.interp1d(vout_map,flow_map,fill_value='extrapolate')
     return(-f(x))
 
+
 def extract_digital_bit(bin_fn,bit_to_read):
     '''
     Return a vector of the value of a given bit for an entire recording.
@@ -672,6 +673,7 @@ def extract_digital_bit(bin_fn,bit_to_read):
     bit = readSGLX.ExtractDigital(mmap, 0, last_samp - 1, 0, [bit_to_read], meta).ravel()
     bit =bit.astype('bool')
     return(bit)
+
 
 def extract_digital_bit_dataframe(bin_fn,bit_to_read,active='HIGH'):
     bit = extract_digital_bit(bin_fn,bit_to_read)
@@ -697,19 +699,24 @@ def extract_digital_bit_dataframe(bin_fn,bit_to_read,active='HIGH'):
     return(df)
 
 
+def baseline_correct_integral(x,sr,winsize=5):
+    '''
+    Corrects the baseline of a flow or pressure trace using a running integral
+    Integral is better than average in cases where we expect exhalation and inhalation signals to integrate to zero
+    We need to calulate the running integral and subtract that,
+    as the assumption is that inhale integral-exhale integral=0
+    :param x: Trace to correct
+    :param winsize: Size of running integral window (in seconds)
+    :param sr: Sample rate of the trace
+    :return: Baseline corrected trace
+    '''
+    raise NotImplementedError('This function does not yet work robustly')
 
 
+    # window = np.ones(int(winsize*sr))
+    winsize = int(winsize*sr)
+    running_integral = scipy.ndimage.uniform_filter(x,winsize)
+    x_corrected = x-running_integral
 
-
-
-
-
-
-
-
-
-
-
-
-
+    return(x_corrected)
 

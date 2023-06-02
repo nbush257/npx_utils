@@ -1,3 +1,4 @@
+#TODO: Update docstring for this script.
 '''
 The recorded auxiliary data (e.g. diaphragm and pleth) is sampled at 10K.
 While the high sampling rate is critical to acquire good EMG, it is excessive for both
@@ -30,235 +31,7 @@ from sklearn.mixture import BayesianGaussianMixture
 from scipy.ndimage.filters import median_filter
 import pandas as pd
 import scipy
-
-
-
-def get_hr(pks,dia_df,sr):
-    'computes the avergae heart rate'
-    ons = dia_df['on_samp']
-    offs = dia_df['off_samp']
-    for on,off in zip(ons,offs):
-        mask = np.logical_not(
-            np.logical_and(
-                pks>on,
-                pks<off
-            )
-        )
-        pks = pks[mask]
-
-    pulse = pd.DataFrame()
-    pulse['hr (bpm)'] = 60*sr/np.diff(pks)
-    aa = pulse.rolling(50,center=True).median()
-    aa.interpolate(limit_direction='both',inplace=True)
-    aa['t']=pks[:-1]/sr
-    return(aa)
-
-
-def remove_EKG(x,sr,thresh=2):
-    '''
-    :param x: diaphragm (or other) emg
-    :param sr: sample rate
-    :return: y ekg filtered out
-            pks - pulse times
-    '''
-    warnings.filterwarnings('ignore')
-    sos = sig.butter(2,[5/sr/2,500/sr/2],btype='bandpass',output='sos')
-    xs = sig.sosfilt(sos,x)
-    pks = sig.find_peaks(xs,prominence=thresh*np.std(xs),distance=0.05*sr)[0]
-    pks = pks[1:-1]
-    amps = xs[pks]
-    win = int(0.010 *sr)
-    y = x.copy()
-    ekg = np.zeros([2*win,len(pks)])
-    for ii,pk in enumerate(pks):
-        try:
-            ekg[:,ii] = x[pk-win:pk+win]
-        except:
-            pass
-
-    ekg_std = np.std(ekg[:30],0) +np.std(ekg[-30:],0)
-    ekg_std = np.log(ekg_std)
-    mask = np.logical_not(np.isfinite(ekg_std))
-    ekg_std[mask] = np.nanmedian(ekg_std)
-
-
-    bgm = BayesianGaussianMixture(n_components=2)
-    cls = bgm.fit_predict(ekg_std[:,np.newaxis])
-    cls[cls==0]=-1
-    m0 = np.nanmean(ekg_std[cls==-1])
-    m1 = np.nanmean(ekg_std[cls==1])
-    if m0>m1:
-        cls = -cls
-
-    ww = int(.0005 * sr)
-    ww += ww % 2 - 1
-
-    for ii,pk in enumerate(pks):
-        if pk-win<0:
-            continue
-        if (pk+win)>len(y):
-            continue
-        if cls[ii]==-1:
-            sm_ekg = sig.savgol_filter(ekg[:,ii],ww,1)
-            y[pk - win:pk + win] -= sm_ekg
-        else:
-            med_ekg = np.nanmedian(ekg[:,ii-5:ii+5],1)
-            med_amp = np.median(amps[ii-5:ii+5])
-            scl = amps[ii]/med_amp
-            y[pk - win:pk + win] -=med_ekg*scl
-
-    y[np.isnan(y)] = np.nanmedian(y)
-    warnings.filterwarnings('default')
-    return(y,pks)
-
-
-def load_mmap(fn):
-    '''
-    Load a memory map of the auxiliary channels
-    :param fn: filename to nidaq .bin file
-    :return:
-            mmap - memory map to the aux data
-            sr - sampling rate of aux data
-    '''
-    meta = readSGLX.readMeta(Path(fn))
-    mmap = readSGLX.makeMemMapRaw(fn,meta)
-
-    return(mmap,meta)
-
-
-def load_ds_pleth(mmap,meta,chan_id,ds_factor=10):
-    '''
-    Load and downsample the pleth data
-    :param mmap: mmap
-    :param meta: metadata dict
-    :param chan_id: Pleth channel index
-    :param ds_factor: downsample factor
-    :return:
-            dat- downsampled pleth data
-            sr_sub - new sampling rate
-    '''
-    assert(type(ds_factor) is int )
-    bitvolts = readSGLX.Int2Volts(meta)
-    sr = readSGLX.SampRate(meta)
-    dat = mmap[chan_id,::ds_factor]*bitvolts
-    sr_sub = sr/ds_factor
-
-    return(dat,sr_sub)
-
-
-def load_dia_emg(mmap,meta,chan_id):
-    '''
-    Read the raw diaphragm emg
-    :param mmap: memory ampped aux data
-    :param meta: meta dict
-    :param chan_id: channel index of the diaphragm
-    :return:
-        dat - the raw diaphramg
-        sr - the smapling rate of the diaphragm recording
-    '''
-    bitvolts = readSGLX.Int2Volts(meta)
-    sr = readSGLX.SampRate(meta)
-    dat = mmap[chan_id]*bitvolts
-    dat = dat-np.mean(dat)
-    return(dat,sr)
-
-
-def filt_int_ds_dia(x,sr,ds_factor=10,rel_height=0.95):
-    '''
-    Filter, integrate and downsample the diaphragm. Detect and summarize the diaphragm bursts
-    Uses medfilt to smooth so it is a little slow, but it is worth it.
-    :param x:
-    :param sr:
-    :param ds_factor:
-    :return:
-    '''
-    assert(type(ds_factor) is int)
-    print(f'Sampling rate is {sr}')
-
-    #Remove the EKG artifact
-    print('Removing the EKG...')
-    dia_filt,pulse = remove_EKG(x,sr,thresh=2)
-    dia_filt[np.isnan(dia_filt)] = np.nanmedian(dia_filt)
-
-
-    # Filter for high frequency signal
-
-    sos = sig.butter(2,[300/sr/2,5000/sr/2],btype='bandpass',output='sos')
-    dia_filt = sig.sosfilt(sos,dia_filt)
-
-    # Use medfilt to get the smoothed rectified EMG
-    print('Smoothing the rectified trace...')
-
-    window_length = int(0.05*np.round(sr))+1
-    if window_length%2==0:
-        window_length+=1
-    dd = median_filter(np.abs(dia_filt),window_length)
-    # Smooth it out a little more
-    window_length = int(0.01*np.round(sr))+1
-    if window_length%2==0:
-        window_length+=1
-    dia_smooth = sig.savgol_filter(dd,window_length=window_length,polyorder=1)
-
-    # Downsample because we don't need this at the original smapling rate
-    dia_sub = dia_smooth[::ds_factor]
-    sr_sub = sr/ds_factor
-
-    # get the burst statistics
-    warnings.filterwarnings('ignore')
-    dia_df = proc.burst_stats_dia(dia_sub,sr_sub,rel_height=rel_height)
-    warnings.filterwarnings('default')
-
-    HR = get_hr(pulse/ds_factor,dia_df,sr_sub)
-
-    # Normalize the integrated diaphragm to a z-score.
-    dia_df['amp_z'] = dia_df['amp']/np.std(dia_sub)
-    dia_sub = dia_sub/np.std(dia_sub)
-    print('Done processing diaphragm')
-
-    return(dia_df,dia_sub,sr_sub,HR,dia_filt)
-
-
-def make_save_fn(fn,save_path,save_name='_aux_downsamp'):
-
-    load_path,no_path = os.path.split(fn)
-    prefix = no_path.replace('.nidq.bin','')
-    save_fn = os.path.join(save_path,prefix+save_name+'.mat')
-    return(save_fn,prefix)
-
-def extract_hr_channel(mmap,meta,ekg_chan=2):
-    '''
-    If the ekg is recorded on a separate channel, extract it here
-    '''
-    bitvolts = readSGLX.Int2Volts(meta)
-    sr = readSGLX.SampRate(meta)
-    dat = mmap[ekg_chan]*bitvolts
-    dat = dat-np.mean(dat)
-
-    sos = sig.butter(8,[100/sr/2,1000/sr/2],btype='bandpass',output='sos')
-    xs = sig.sosfilt(sos,dat)
-    pks = sig.find_peaks(xs,prominence=5*np.std(xs),distance=int(0.05*sr))[0]
-
-    pulse = pd.DataFrame()
-    pulse['hr (bpm)'] = 60*sr/np.diff(pks)
-    aa = pulse.rolling(50,center=True).median()
-    aa.interpolate(limit_direction='both',inplace=True)
-    aa['t']=pks[:-1]/sr
-    return(aa)
-
-
-def extract_temp(mmap,meta,temp_chan=7):
-    bitvolts = readSGLX.Int2Volts(meta)
-    sr = readSGLX.SampRate(meta)
-    dat = mmap[temp_chan]*bitvolts
-    # 0v=25C, 2V = 45C, 100mv=1C
-    vout_map = [0,2]
-    temp_map = [25,45]
-    temp_f = scipy.interpolate.interp1d(vout_map, temp_map)
-    temp_out = temp_f(dat)
-    temp_out = scipy.signal.savgol_filter(temp_out,101,1)[::10]
-    return(temp_out)
-
-
+from preprocess_aux import *
 
 
 def main(fn,pleth_chan,dia_chan,ekg_chan,temp_chan,v_in,save_path):
@@ -276,7 +49,8 @@ def main(fn,pleth_chan,dia_chan,ekg_chan,temp_chan,v_in,save_path):
         pleth = []
         sr_pleth = sr_dia_sub
     else:
-        pleth,sr_pleth = load_ds_pleth(mmap,meta,pleth_chan)
+        # TODO: correct flowmeter/pdiff calculations
+        pleth,sr_pleth = load_ds_pdiff(mmap,meta,pleth_chan)
         # pleth = pleth/np.std(pleth)
         print('Using flowmeter calibrations')
         pleth = data.calibrate_flowmeter(pleth,vin=v_in)
@@ -329,7 +103,7 @@ def main(fn,pleth_chan,dia_chan,ekg_chan,temp_chan,v_in,save_path):
     save_fn,prefix = make_save_fn(fn,save_path,save_name='_filtered_dia')
     sio.savemat(save_fn,data_dict_raw,oned_as='column')
 
-
+#TODO: Use a different function for processiong PDIFF vs Flowmeter
 @click.command()
 @click.argument('fn')
 @click.option('-p','--pleth_chan','pleth_chan',default=5)
@@ -337,8 +111,7 @@ def main(fn,pleth_chan,dia_chan,ekg_chan,temp_chan,v_in,save_path):
 @click.option('-e','--ekg_chan','ekg_chan',default=2)
 @click.option('-t','--temp_chan','temp_chan',default=7)
 @click.option('-v','--v_in','v_in',default=9,type=float)
-@click.option('-s','--save_path','save_path',default=None)
-def batch(fn,pleth_chan,dia_chan,save_path,v_in,ekg_chan,temp_chan):
+def batch(fn,pleth_chan,dia_chan,v_in,ekg_chan,temp_chan):
     '''
     Set pleth chan to -1 if no pleth is recorded.
     :param fn:

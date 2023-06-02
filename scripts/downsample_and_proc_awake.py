@@ -1,3 +1,4 @@
+#TODO: Update docstring for this script.
 '''
 The recorded auxiliary data (e.g. diaphragm and pleth) is sampled at 10K.
 While the high sampling rate is critical to acquire good EMG, it is excessive for both
@@ -30,50 +31,8 @@ from sklearn.mixture import BayesianGaussianMixture
 from scipy.ndimage.filters import median_filter
 import pandas as pd
 
-
-
-def load_mmap(fn):
-    '''
-    Load a memory map of the auxiliary channels
-    :param fn: filename to nidaq .bin file
-    :return:
-            mmap - memory map to the aux data
-            sr - sampling rate of aux data
-    '''
-    meta = readSGLX.readMeta(Path(fn))
-    mmap = readSGLX.makeMemMapRaw(fn,meta)
-
-    return(mmap,meta)
-
-
-def load_ds_pleth(mmap,meta,chan_id,ds_factor=10):
-    '''
-    Load and downsample the pleth data
-    :param mmap: mmap
-    :param meta: metadata dict
-    :param chan_id: Pleth channel index
-    :param ds_factor: downsample factor
-    :return:
-            dat- downsampled pleth data
-            sr_sub - new sampling rate
-    '''
-    assert(type(ds_factor) is int )
-    bitvolts = readSGLX.Int2Volts(meta)
-    sr = readSGLX.SampRate(meta)
-    dat = mmap[chan_id,::ds_factor]*bitvolts
-    sr_sub = sr/ds_factor
-
-    return(dat,sr_sub)
-
-
-def make_save_fn(fn,save_path,save_name='_aux_downsamp'):
-
-    load_path,no_path = os.path.split(fn)
-    prefix = no_path.replace('.nidq.bin','')
-    save_fn = os.path.join(save_path,prefix+save_name+'.mat')
-    return(save_fn,prefix)
-
-
+#TODO: Use a different function for processiong PDIFF vs Flowmeter
+#TODO: Call only one bm_mat_proc file across the awake/anest scripts
 def main(fn,pleth_chan,v_in,save_path):
 
     if save_path is None:
@@ -101,12 +60,13 @@ def main(fn,pleth_chan,v_in,save_path):
     save_fn,prefix = make_save_fn(fn,save_path)
     sio.savemat(save_fn,data_dict,oned_as='column')
 
+
 @click.command()
 @click.argument('fn')
 @click.option('-p','--pleth_chan','pleth_chan',default=0)
 @click.option('-v','--v_in','v_in',default=9,type=float)
 @click.option('-s','--save_path','save_path',default=None)
-def batch(fn,pleth_chan,save_path,v_in):
+def batch(fn,pleth_chan,v_in):
     '''
     Set pleth chan to -1 if no pleth is recorded.
     :param fn:
@@ -137,7 +97,7 @@ def batch(fn,pleth_chan,save_path,v_in):
         root = os.path.split(fn)[0]
         main(fn, pleth_chan,v_in,root)
         if pleth_chan>=0:
-            matlab_cmd_string = "matlab -nosplash -nodesktop -nojvm -r bm_mat_proc('" + fn + "')"
+            matlab_cmd_string = "matlab -nosplash -nodesktop -nojvm -r bm_mat_proc_awake('" + fn + "')"
             os.system(matlab_cmd_string)
         else:
             print('No pleth signal so not performing BM')
