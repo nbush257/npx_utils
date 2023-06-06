@@ -9,6 +9,8 @@ from pathlib import Path
 from sklearn.mixture import BayesianGaussianMixture
 from scipy.ndimage import median_filter
 import pandas as pd
+import warnings
+import os
 
 def load_mmap(fn):
     '''
@@ -29,10 +31,31 @@ def get_tvec(dat,sr):
     return(tvec)
 
 
+def get_tvec_from_fn(fn):
+    '''
+    Overload get tvec to work on a nidaq filename
+    :param fn: Path object to a Nidaq file
+    :return: tvec
+    '''
+    mmap,meta = load_mmap(fn)
+    tvec = get_tvec_from_mmap(mmap,meta)
+    return(tvec)
 
-# TODO: Account for positive or negative values of pleth
-#TODO: Make a different function for processiong PDIFF vs Flowmeter
-def load_ds_pdiff(mmap,meta,chan_id,ds_factor=10,winsize=5):
+
+def get_tvec_from_mmap(mmap,meta):
+    '''
+    Extract the timevector given a memory map and a metafile
+    :param mmap: A nidaq memory map object of aux data
+    :param meta: Meta data as extracted from readSGLX
+    :return: tvec
+    '''
+    sr = readSGLX.SampRate(meta)
+    n_samps = mmap.shape[1]
+    tvec = np.linspace(0,n_samps/sr,n_samps)
+    return(tvec)
+
+
+def load_ds_pdiff(mmap,meta,chan_id,ds_factor=10,winsize=5,inhale_dir=-1):
     '''
     Load and downsample the pleth data
     :param mmap: mmap
@@ -43,17 +66,16 @@ def load_ds_pdiff(mmap,meta,chan_id,ds_factor=10,winsize=5):
             dat- downsampled pleth data
             sr_sub - new sampling rate
     '''
+
     assert(type(ds_factor) is int)
     bitvolts = readSGLX.Int2Volts(meta)
     sr = readSGLX.SampRate(meta)
     sr_sub = sr / ds_factor
     dat = mmap[chan_id,::ds_factor]*bitvolts
+    dat = dat*inhale_dir
 
-    # Remove the baseline using the integral method
-    dat_norm = data.baseline_correct_integral(dat,sr_sub,winsize=winsize)
-
-
-    return(dat_norm,sr_sub)
+    # Do not do any baseline correction on the PDIFF because it is AC.
+    return(dat,sr_sub)
 
 
 def load_ds_process_flowmeter(mmap,meta,chan_id,vin=9,ds_factor=10,inhale_dir=-1):
@@ -62,16 +84,14 @@ def load_ds_process_flowmeter(mmap,meta,chan_id,vin=9,ds_factor=10,inhale_dir=-1
     sr = readSGLX.SampRate(meta)
     flow = mmap[chan_id, ::ds_factor] * bitvolts
     sr_sub = sr / ds_factor
-    winsize=int(5*sr_sub)
+    winsize = 5
+    # Calibrate voltage to flow
     flow_calibrated = data.calibrate_flowmeter(flow, vin=vin)
-    #TODO: simply subtracting the mean here...
-    flow_calibrated-= np.mean(flow_calibrated)
-    #TODO: Identify zeroflow point
-    flow_calibrated = flow_calibrated * inhale_dir
-    return(flow_calibrated,sr_sub)
-
-
-
+    # Correct for bias flow
+    flow_calibrated_corrected = data.baseline_correct_integral(flow_calibrated,sr=sr,winsize=winsize)
+    # Make inhalation updward deflections
+    flow_calibrated_corrected = flow_calibrated_corrected * inhale_dir
+    return(flow_calibrated_corrected,sr_sub)
 
 
 def load_dia_emg(mmap,meta,chan_id):
@@ -101,7 +121,6 @@ def filt_int_ds_dia(x,sr,ds_factor=10,rel_height=0.95):
     :return:
     '''
     assert(type(ds_factor) is int)
-    print(f'Sampling rate is {sr}')
 
     #Remove the EKG artifact
     print('Removing the EKG...')
@@ -136,14 +155,14 @@ def filt_int_ds_dia(x,sr,ds_factor=10,rel_height=0.95):
     dia_df = proc.burst_stats_dia(dia_sub,sr_sub,rel_height=rel_height)
     warnings.filterwarnings('default')
 
-    HR = get_hr_from_dia(pulse/ds_factor,dia_df,sr_sub)
+    HR,heartbeats = get_hr_from_dia(pulse/ds_factor,dia_df,sr_sub)
 
     # Normalize the integrated diaphragm to a z-score.
     dia_df['amp_z'] = dia_df['amp']/np.std(dia_sub)
     dia_sub = dia_sub/np.std(dia_sub)
     print('Done processing diaphragm')
 
-    return(dia_df,dia_sub,sr_sub,HR,dia_filt)
+    return(dia_df,dia_sub,sr_sub,HR,dia_filt,heartbeats)
 
 
 def remove_EKG(x,sr,thresh=2):
@@ -219,10 +238,10 @@ def get_hr_from_dia(pks,dia_df,sr):
 
     pulse = pd.DataFrame()
     pulse['hr (bpm)'] = 60*sr/np.diff(pks)
-    aa = pulse.rolling(50,center=True).median()
-    aa.interpolate(limit_direction='both',inplace=True)
-    aa['t']=pks[:-1]/sr
-    return(aa)
+    hr_smooth = pulse.rolling(50,center=True).median()
+    hr_smooth.interpolate(limit_direction='both',inplace=True)
+    hr_smooth['t']=pks[:-1]/sr
+    return(hr_smooth,pks/sr)
 
 
 def extract_hr_channel(mmap,meta,ekg_chan=2):
@@ -247,7 +266,7 @@ def extract_hr_channel(mmap,meta,ekg_chan=2):
     return(bpm,pks/sr)
 
 
-def extract_temp(mmap,meta,temp_chan=7):
+def extract_temp(mmap,meta,temp_chan=7,ds_factor=10):
     """
     Extract the temperature from the FHC DC temp controller. Assumes the manufacturers calibration
     :param mmap:
@@ -255,6 +274,7 @@ def extract_temp(mmap,meta,temp_chan=7):
     :param temp_chan:
     :return:
     """
+    assert(type(ds_factor) is int)
     bitvolts = readSGLX.Int2Volts(meta)
     sr = readSGLX.SampRate(meta)
     dat = mmap[temp_chan]*bitvolts
@@ -263,7 +283,7 @@ def extract_temp(mmap,meta,temp_chan=7):
     temp_map = [25,45]
     temp_f = scipy.interpolate.interp1d(vout_map, temp_map)
     temp_out = temp_f(dat)
-    temp_out = scipy.signal.savgol_filter(temp_out,101,1)[::10]
+    temp_out = scipy.signal.savgol_filter(temp_out,101,1)[::ds_factor]
     return(temp_out)
 
 

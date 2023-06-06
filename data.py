@@ -641,17 +641,13 @@ def calibrate_flowmeter(x,vin=9):
     :return: y - calibrated flow in ml/min
     '''
     assert(x.dtype=='float64')
-    # raise Warning("This code does not yet integrate flow to zero..."
     v_calibrated=9.58 # NEB 2022-10-07
     # First make the map as it is calibrated with 9.58v supply (NEB 2022-10-07)
     vout_map = np.array([1.5944,1.6923,1.7822,1.9068,2.0688,2.2803,2.5628,2.8907,3.0907,3.2433,3.3619,3.448,3.5321])
-
-
     flow_map = np.array([300,250,200,150,100,50,0,-50,-100,-150,-200,-250,-300])
 
-    #Then scale for the case where vin is not 9
+    #Then scale for the case of arbitrary vin
     vout_map = vout_map * (vin/v_calibrated)
-
 
     f = scipy.interpolate.interp1d(vout_map,flow_map,fill_value='extrapolate')
     return(-f(x))
@@ -701,7 +697,7 @@ def extract_digital_bit_dataframe(bin_fn,bit_to_read,active='HIGH'):
 
 def baseline_correct_integral(x,sr,winsize=5):
     '''
-    Corrects the baseline of a flow or pressure trace using a running integral
+    Corrects the baseline of a flow trace using a running integral
     Integral is better than average in cases where we expect exhalation and inhalation signals to integrate to zero
     We need to calulate the running integral and subtract that,
     as the assumption is that inhale integral-exhale integral=0
@@ -710,13 +706,9 @@ def baseline_correct_integral(x,sr,winsize=5):
     :param sr: Sample rate of the trace
     :return: Baseline corrected trace
     '''
-    raise NotImplementedError('This function does not yet work robustly')
 
-
-    # window = np.ones(int(winsize*sr))
-    winsize = int(winsize*sr)
-    running_integral = scipy.ndimage.uniform_filter(x,winsize)
+    winsamps = int(winsize*sr)
+    running_integral = scipy.ndimage.uniform_filter(x,winsamps)
     x_corrected = x-running_integral
 
     return(x_corrected)
-
