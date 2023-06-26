@@ -124,7 +124,7 @@ def main(fn, pdiff_chan, flowmeter_chan, dia_chan, ekg_chan, temp_chan, v_in, in
     # Save the downsampled data to a mat file
     data_dict = {
         'pdiff':pdiff,
-        'flow':flow,
+        'flowmeter':flow,
         'dia':dia_sub,
         'sr':sr_sub,
         'hr_bpm':hr_bpm,

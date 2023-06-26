@@ -523,7 +523,14 @@ def load_aux(load_dir,t=0,mode='ks'):
     breaths = breaths[breaths['duration_sec'] < 1]
     aux_t = aux_dat['t'].ravel()
     dia = aux_dat['dia'].ravel()
-    pleth = aux_dat['pleth'].ravel()
+    # Hotfix for new BM_MAT_PROC (NEB20230620)
+    if 'pleth' in aux_dat.keys():
+        pleth = aux_dat['pleth'].ravel()
+    elif 'pdiff' in aux_dat.keys():
+        pleth = aux_dat['pdiff'].ravel()
+    elif 'flowmeter' in aux_dat.keys():
+        pleth = aux_dat['flowmeter'].ravel()
+
     sr = aux_dat['sr'].ravel()[0]
     aux_dat = {}
     aux_dat['t'] = aux_t

@@ -409,6 +409,7 @@ def plot_mean_breaths(spikes,breaths,max_time,p_save,prefix,coherence,coh_thresh
 def get_opto_data(ks2_dir,stim_len):
     '''
     sequentially tries to get the opto data
+    This is really hacky...
     :param ks2_dir:
     :param stim_len:
     :return:
@@ -422,12 +423,16 @@ def get_opto_data(ks2_dir,stim_len):
             opto_time = pd.read_csv(opto_fn, header=None)
         except:
             try:
-                opto_fn = glob.glob(os.path.join(ks2_dir, '../../*XD_8_0_10.txt'))[0]
+                opto_fn = glob.glob(os.path.join(ks2_dir, f'../../*xa_6_{stim_len}.txt'))[0]
                 opto_time = pd.read_csv(opto_fn, header=None)
-                stim_len = 10
             except:
-                opto_fn = None
-                opto_time = None
+                try:
+                    opto_fn = glob.glob(os.path.join(ks2_dir, '../../*XD_8_0_10.txt'))[0]
+                    opto_time = pd.read_csv(opto_fn, header=None)
+                    stim_len = 10
+                except:
+                    opto_fn = None
+                    opto_time = None
     if opto_fn is not None:
         print(f'Opto tag data found in: {os.path.split(opto_fn)[-1]}')
     else:
@@ -554,9 +559,20 @@ def main(ks2_dir,t_max,stim_len,p_save=None):
             raster_plot_start = max_time-25
         else:
             raster_plot_start = 100
-        viz.plot_raster_example(spikes,aux['sr'],aux['pleth'],aux['dia'],raster_plot_start,5)
-        plt.savefig(os.path.join(p_results,f'{prefix}_example_raster_short.png'),dpi=150)
-        plt.close('all')
+
+        # Hotfix for new airflow data from BM_MAT_PROC (NEB 20230620)
+        if 'pleth' in aux.keys():
+            nasal = aux['pleth']
+        elif 'pdiff' in aux.keys():
+            nasal = aux['pdiff']
+        elif 'flowmeter' in aux.keys():
+            nasal = aux['flowmeter']
+        else:
+            nasal = None
+        if nasal is not None:
+            viz.plot_raster_example(spikes,aux['sr'],nasal,aux['dia'],raster_plot_start,5)
+            plt.savefig(os.path.join(p_results,f'{prefix}_example_raster_short.png'),dpi=150)
+            plt.close('all')
 
 
         # =============================== #
