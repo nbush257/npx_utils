@@ -15,5 +15,5 @@ module load GCC cuda libxcb
 source activate pyks2
 cd /active/ramirez_j/ramirezlab/nbush/projects/npx_utils/sort
 
-python ibl_sort_mouse.py /active/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/processed/mi-20230328-02
+python ibl_sort_mouse.py /archive/ramirez_j/ramirezlab/nbush/projects/dynaresp/data/raw/20230511_PM_3_g0
 

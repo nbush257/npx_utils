@@ -12,7 +12,7 @@ import one.alf.io as aio
 import shutil
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('TkAgg')
+matplotlib.use('Agg')
 
 DELETE=True
 
@@ -26,7 +26,11 @@ def run_one(bin_file):
 	alf_path = INTEGRATION_DATA_PATH.joinpath('alf')
 
 	label = ""
-	override_params = {}
+	# override_params = {}
+	# override_params = {'minfr_goodchannels':0.1,'low_memory':True}
+	override_params = {'low_memory':True}
+
+	
 
 	cluster_times_path = INTEGRATION_DATA_PATH.joinpath("cluster_times")
 	ks_output_dir = INTEGRATION_DATA_PATH.joinpath(f"{pykilosort.__version__}" + label, bin_file.name.split('.')[0])
@@ -36,7 +40,7 @@ def run_one(bin_file):
 	for k in override_params:
 		params[k] = override_params[k]
 
-	# run_spike_sorting_ibl(bin_file, delete=DELETE, scratch_dir=SCRATCH_DIR, params=params,ks_output_dir=ks_output_dir, alf_path=alf_path,log_level='DEBUG')
+	run_spike_sorting_ibl(bin_file, delete=DELETE, scratch_dir=SCRATCH_DIR, params=params,ks_output_dir=ks_output_dir, alf_path=alf_path,log_level='DEBUG')
 
 	if DELETE == False:
 		working_directory = SCRATCH_DIR.joinpath('.kilosort', bin_file.stem)
