@@ -1,7 +1,4 @@
 """Routines for data import and manipulation."""
-import neo
-import elephant
-import quantities as pq
 import sys
 import csv
 import glob
@@ -18,11 +15,15 @@ from pathlib import Path
 sys.path.append(r'Y:\projects')
 sys.path.append('/active/ramirez_j/ramirezlab/nbush/projects')
 from npx_utils.signal_funcs import binary_onsets
-from spykes.plot import NeuroVis,PopVis
+try:
+    from spykes.plot import NeuroVis,PopVis
+    has_spykes = True
+except:
+    has_spykes = False
+    pass
 from tqdm import tqdm
 import scipy.io.matlab as sio
 import re
-import quantities as pq
 import scipy.interpolate
 
 
@@ -133,7 +134,7 @@ def get_ni_analog(ni_bin_fn, chan_id):
     Convenience function to load in a NI analog channel
     :param ni_bin_fn: filename to load from
     :param chan_id: channel index to load
-    :return: analog_dat
+    :return: tvec,analog_dat
     '''
     meta = readSGLX.readMeta(Path(ni_bin_fn))
     bitvolts = readSGLX.Int2Volts(meta)
@@ -150,7 +151,7 @@ def get_imec_analog(imec_bin_fn,chan_id,t0,tf):
     Convenience function to load in an imce analog channel
     :param imec_bin_fn: filename to load from
     :param chan_id: channel index to load
-    :return: analog_dat
+    :return: tvec,analog_dat
     '''
     if type(chan_id) is int:
         chan_id= [chan_id]
@@ -411,33 +412,33 @@ def load_alf(alf_path, keep_good=True):
 
     return (spikes, metrics)
 
+if has_spykes:
+    def create_spykes_pop(spikes,start_time=0,stop_time=np.inf):
+        '''
+        Convert a spikes dataframe to a Spykes neuron list and population object
 
-def create_spykes_pop(spikes,start_time=0,stop_time=np.inf):
-    '''
-    Convert a spikes dataframe to a Spykes neuron list and population object
+        :param spikes: dataframe of spike times "ts" in seconds and "cell_id" in long form.
+        :param start_time: ignore spikes before this time (s)
+        :param stop_time: ignore spikes after this time (s)
+        :return: neuron_list,pop
+        '''
 
-    :param spikes: dataframe of spike times "ts" in seconds and "cell_id" in long form.
-    :param start_time: ignore spikes before this time (s)
-    :param stop_time: ignore spikes after this time (s)
-    :return: neuron_list,pop
-    '''
+        sub_spikes = spikes[spikes['ts']>start_time]
+        sub_spikes = sub_spikes[sub_spikes['ts']<stop_time]
 
-    sub_spikes = spikes[spikes['ts']>start_time]
-    sub_spikes = sub_spikes[sub_spikes['ts']<stop_time]
+        neuron_list = []
+        cell_ids = sub_spikes['cell_id'].unique()
+        cell_ids.sort()
+        for ii, cell_id in enumerate(cell_ids):
+            sub_df = sub_spikes[sub_spikes['cell_id'] == cell_id]
+            if(len(sub_df.ts))<10:
+                neuron = []
+            else:
+                neuron = NeuroVis(sub_df.ts, cell_id)
+            neuron_list.append(neuron)
 
-    neuron_list = []
-    cell_ids = sub_spikes['cell_id'].unique()
-    cell_ids.sort()
-    for ii, cell_id in enumerate(cell_ids):
-        sub_df = sub_spikes[sub_spikes['cell_id'] == cell_id]
-        if(len(sub_df.ts))<10:
-            neuron = []
-        else:
-            neuron = NeuroVis(sub_df.ts, cell_id)
-        neuron_list.append(neuron)
-
-    pop = PopVis(neuron_list)
-    return(neuron_list,pop)
+        pop = PopVis(neuron_list)
+        return(neuron_list,pop)
 
 
 def get_event_triggered_st(ts,events,idx,pre_win,post_win):
@@ -598,47 +599,6 @@ def parse_dir(ks_dir):
     meta['gate'] = gate
     meta['probe'] = probe
     return(meta)
-
-
-def spikes2neo_trains(spikes,cell_id= None,t0=0,t_stop=None,out='dict'):
-
-    all_cells = spikes['cell_id'].unique()
-    if cell_id is None:
-        cell_id = all_cells
-    if type(cell_id) is int:
-        cell_id = [cell_id]
-    for ii in cell_id:
-        if ii not in all_cells:
-            raise(ValueError(f'Cell {ii} is not in Spikes'))
-    if t_stop is None:
-        t_stop = spikes['ts'].max()*pq.s
-    elif type(t_stop) is not pq.Quantity:
-        t_stop = t_stop*pq.s
-
-    if type(t0) is not pq.Quantity:
-        t0 = t0*pq.s
-
-    train_dict = {}
-    train_list = []
-
-    for ii in cell_id:
-        sub_spikes = spikes.query('cell_id==@ii')
-        ts = sub_spikes['ts'].values*pq.s
-        clu_id = sub_spikes['cluster_id'].values[0]
-        depth = sub_spikes['depth'].values[0]
-
-        ts = ts[ts<t_stop]
-        ts = ts[ts>t0]
-        train = neo.SpikeTrain(ts,t_stop,t_start=t0,name=ii,description=f'clu_id={clu_id},depth={depth}')
-        train_dict[ii]= train
-        train_list.append(train)
-
-    if out=='dict':
-        return(train_dict)
-    elif out=='list':
-        return(train_list)
-    else:
-        return(0)
 
 
 def calibrate_flowmeter(x,vin=9):

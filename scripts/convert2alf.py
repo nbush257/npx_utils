@@ -1,6 +1,8 @@
 from pathlib import Path
 from atlaselectrophysiology.extract_files import extract_data
 import click
+from neuropixel import spikeglx
+import numpy as np
 
 DEBUG = False
 
@@ -28,6 +30,7 @@ def run_one(ks_path,ephys_path,out_path):
         print('Not running because DEBUG is True')
     else:
         extract_data(ks_path, ephys_path, out_path)
+        convert_and_save_local_coordinates(ephys_path,out_path)
     return(0)
 
 def run_batch(run_path):
@@ -63,6 +66,16 @@ def main(in_path,ephys_path,out_path,batch):
         run_one(in_path,ephys_path,out_path)
 
     
+def convert_and_save_local_coordinates(ephys_path,out_path):
+    meta_fn = list(ephys_path.glob('*.ap.meta'))[0]
+    geom = spikeglx.read_geometry(Path(meta_fn))
+    lc = np.vstack([geom['x'],geom['y']]).T
+    lc = lc[geom['flag'].astype('bool')]
+    fn_save =out_path.joinpath('channels.localCoordinates.npy') 
+    print(f'\t Saving channel  map to: {fn_save}')
+    np.save(fn_save,lc)
+
+
 
 if __name__=='__main__':
     main()

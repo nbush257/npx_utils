@@ -287,6 +287,37 @@ def extract_temp(mmap,meta,temp_chan=7,ds_factor=10):
     return(temp_out)
 
 
+def filt_int_ds_arbitrary(x,sr,ds_factor=10):
+    assert(type(ds_factor) is int)
+
+    # Filter for high frequency signal
+
+    sos = sig.butter(2,[300/sr/2,5000/sr/2],btype='bandpass',output='sos')
+    x_filt = sig.sosfilt(sos,x)
+
+    # Use medfilt to get the smoothed rectified EMG
+    print('Smoothing the rectified trace...')
+
+    window_length = int(0.05*np.round(sr))+1
+    if window_length%2==0:
+        window_length+=1
+    dd = median_filter(np.abs(x_filt),window_length)
+    # Smooth it out a little more
+    window_length = int(0.01*np.round(sr))+1
+    if window_length%2==0:
+        window_length+=1
+    dia_smooth = sig.savgol_filter(dd,window_length=window_length,polyorder=1)
+
+    # Downsample because we don't need this at the original smapling rate
+    x_sub = dia_smooth[::ds_factor]
+    sr_sub = sr/ds_factor
+
+    # Normalize the integrated diaphragm to a z-score.
+    x_sub = x_sub/np.std(x_sub)
+    print('Done processing signal')
+    return(x_sub,sr_sub,x_filt)
+
+
 def make_save_fn(fn,save_path,save_name='_aux_downsamp'):
 
     load_path,no_path = os.path.split(fn)

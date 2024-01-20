@@ -532,3 +532,79 @@ def plot_reset_curve_normed(breaths,events,opto_color='#00b7ff',t0=0,tf=None,ann
 
     sns.despine()
     return(x_stim,y_stim,x_control,y_control)
+
+def plot_raster_with_aux(spikes,aux_t,aux,t0,tf,binsize=0.05,figsize=(10,10),cmap='magma',vmin=0,vmax=50):
+    '''
+    Plot a raster (heatmap) with the auxiliary channel above.
+    param spikes: a spikes data frame
+    param aux_t : time vector that maps the auxiliary channel into time (units: s)
+    param aux: an auxiliary channel to plot over the raster (e.g., diaphragm)
+    param t0: first time (in seconds) to plot
+    param tf: last time (in seconds) to plot
+    param binsize: binsize in seconds. Default=0.05 (50ms)
+
+    return: ax_aux, ax_rast
+    '''
+    # Compute raster
+    raster,cell_id,bins = proc.bin_trains(spikes['ts'],spikes['cell_id'],start_time=t0, max_time=tf,binsize=binsize)
+    raster= raster/binsize
+
+    # Set up figure
+    gs = plt.GridSpec(10,1)
+    f = plt.figure(figsize=figsize)
+    ax_aux = f.add_subplot(gs[:1,:])
+
+    # Plot auxiliary channel
+    s0,sf = np.searchsorted(aux_t,[t0,tf])
+    ax_aux.plot(aux_t[s0:sf],aux[s0:sf],color='k',lw=0.5)
+
+    # Plot raster as a mesh
+    ax_rast = f.add_subplot(gs[1:,:],sharex=ax_aux)
+    ax_rast.pcolormesh(bins,cell_id,raster,cmap=cmap,vmin=vmin,vmax=vmax)
+
+    # If there are multiple probes, plot a horizontal line
+    try:
+        probe_cuts = spikes.groupby('probe')['cell_id'].max().values
+        for cc in probe_cuts:
+            ax_rast.axhline(cc,color='w',lw=1)
+    except:
+        pass
+
+    # Set the xlim and clean up
+    plt.xlim(t0,tf)
+    ax_aux.axis('off')
+
+    return(ax_aux,ax_rast)
+
+def plot_spikes_with_aux(spikes,aux_t,aux,t0,tf,figsize=(4,6),aux_ylim=None):
+    '''
+    Plot a scatterplot of spikes with the auxiliary channel above.
+    param spikes: a spikes data frame
+    param aux_t : time vector that maps the auxiliary channel into time (units: s)
+    param aux: an auxiliary channel to plot over the raster (e.g., diaphragm)
+    param t0: first time (in seconds) to plot
+    param tf: last time (in seconds) to plot
+    param binsize: binsize in seconds. Default=0.05 (50ms)
+
+    return: ax_aux, ax_spk
+    '''
+
+    gs = plt.GridSpec(8,1)
+    f = plt.figure(figsize=figsize)
+    ax_aux = f.add_subplot(gs[:1,:])
+    ax_spk = f.add_subplot(gs[1:,:],sharex=ax_aux)
+
+    temp = spikes.query('ts>@t0 & ts<@tf')
+    plt.sca(ax_spk)
+    if 'probe' in temp.columns:
+        sns.scatterplot(data=temp,x='ts',y='cell_id',hue='probe',s=4,palette=['k','r'],hue_order=['imec0','imec1'],legend=False)
+    else:
+        sns.scatterplot(data=temp,x='ts',y='cell_id',s=4,legend=False,color='k')
+    s0,sf = np.searchsorted(aux_t,[t0,tf])
+    ax_aux.plot(aux_t[s0:sf],aux[s0:sf],'k',lw=1)
+    plt.xlim(t0,tf)
+    if aux_ylim is not None:
+        ax_aux.set_ylim(aux_ylim)
+
+    sns.despine()
+    return(ax_aux, ax_spk)
