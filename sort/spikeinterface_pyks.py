@@ -3,6 +3,7 @@ import spikeinterface.preprocessing as spre
 import spikeinterface.sorters as ss 
 import spikeinterface.qualitymetrics as sqm
 import spikeinterface.exporters as sexp 
+import spikeinterface.sortingcomponents.motion_interpolation as sim
 import spikeinterface.full as si
 from pathlib import Path
 from brainbox.metrics import single_units
@@ -17,9 +18,11 @@ import click
 import re
 import logging
 import sys
+import os
 
 # May want to do a "remove duplicate spikes" after manual sorting  - this would allow manual sorting to merge  units that have some, but not a majority, of duplicated spikes
 
+#TODO: Maybe sparsity fails with too few spikes?
 #TODO: I/O handling 
 #TODO: Compress raw recording for storage
 #TODO: Make a CLI
@@ -34,13 +37,16 @@ import sys
 #TODO: Log sort progress?
 
 job_kwargs = dict(chunk_duration="500ms", n_jobs=10, progress_bar=True)
+we_kwargs = dict()
+KS3_ROOT = r'C:\Users\nbush\helpers\kilosort3'
 
 # QC presets
 AMPLITUDE_CUTOFF = 0.1
 SLIDING_RP = 0.1
-AMP_THRESH = 50.
+AMP_THRESH = 40.
+MIN_SPIKES = 500
+
 RUN_PC = False
-USE_SPARSE = True
 USE_TEMPLATE_METRICS = False
 PLOT_DRIFTMAP =False
 
@@ -55,23 +61,32 @@ else:
 
 
 def run_probe(probe_src,stream,probe_local,testing=False):
+    si.Kilosort3Sorter.set_kilosort3_path(KS3_ROOT)
+
     # Set paths
     PHY_DEST = probe_local.joinpath('phy_output')
-    SORT_PATH = probe_local.joinpath(f'.pyks25')
-    WVFM_PATH = probe_local.joinpath('.wvfm')
+    SORT_PATH = probe_local.joinpath(f'.ks3')
+    WVFM_PATH = SORT_PATH.joinpath('.wvfm')
     PREPROC_PATH = probe_local.joinpath('.preproc')
-    DEDUPE_PATH = probe_local.joinpath('.pyks25_dedupe')
     MOTION_PATH = probe_local.joinpath('.motion')
+    probe_local.mkdir(parents=True,exist_ok=True)
+    if PHY_DEST.exists():
+        print(f'Local phy destination exists ({PHY_DEST}). Skipping this probe {probe_src}')
+        return
 
     # SET SORT PARAMETERS
-    sorter_params ={}
-    # sorter_params['perform_drift_registration'] = False
+    sorter_params = {}
+    sorter_params['car'] = False
+    sorter_params['do_correction'] = False
+
 
     # POINT TO RECORDING and concatenate
     if not PREPROC_PATH.exists():
         recording = se.read_spikeglx(probe_src,stream_id = stream)
         print(recording)
         rec_list =[]
+        curr_samples = 0
+        sample_bounds = []
         for ii in range(recording.get_num_segments()):
             seg = recording.select_segments(ii)
             sr = seg.get_sampling_frequency()
@@ -81,32 +96,49 @@ def run_probe(probe_src,stream,probe_local,testing=False):
                 print(f"TESTING: ONLY RUNNING ON {use_secs}s per segment")
                 seg = seg.frame_slice(0,30000*use_secs)
             rec_list.append(seg)
+            sample_bounds.append([curr_samples,curr_samples + seg.get_num_samples(),seg.sample_index_to_time(curr_samples),
+                                  seg.sample_index_to_time(curr_samples+seg.get_num_samples())])
+            curr_samples +=seg.get_num_samples()
         recording = si.concatenate_recordings(rec_list)
+        sample_bounds = pd.DataFrame(sample_bounds,columns=['rec_start_sample','rec_end_sample','rec_start_time','rec_end_time'])
+        sample_bounds.to_csv(probe_local.joinpath('sequence.tsv'),sep='\t')
 
+        # Preprocessing
+        print('Preprocessing IBL destripe...')
+        rec_filtered = spre.highpass_filter(recording)
+        rec_shifted = spre.phase_shift(rec_filtered)
+        bad_channel_ids, all_channels = spre.detect_bad_channels(rec_shifted)
+        rec_interpolated = spre.interpolate_bad_channels(rec_shifted, bad_channel_ids)
+        rec_destriped = spre.highpass_spatial_filter(rec_interpolated)     
 
-        # Set up preprocessing
-        recording = spre.phase_shift(recording)
-        recording = spre.highpass_filter(recording, freq_min=300)
-        recording = spre.common_reference(recording,reference='global',operator='median')
-        recording = spre.highpass_spatial_filter(recording,n_channel_pad=60)
-
-        # Drift correction explicit
-        recording, motion_info = si.correct_motion(recording, preset='kilosort_like',
-                                folder=MOTION_PATH,
-                                output_motion_info=True, **job_kwargs)
-        recording.save(folder=PREPROC_PATH,**job_kwargs)
-
+        if MOTION_PATH.exists():
+            print('Motion info loaded')
+            motion_info = si.load_motion_info(MOTION_PATH)
+            rec_mc = sim.interpolate_motion(recording = rec_destriped,
+                                                        motion=motion_info['motion'],
+                                                        temporal_bins=motion_info['temporal_bins'],
+                                                        spatial_bins=motion_info['spatial_bins'],
+                                                        **motion_info['parameters']['interpolate_motion_kwargs'],
+                                                        )
+        else:
+            print('Motion correction KS-like')
+            rec_mc, motion_info = si.correct_motion(rec_destriped, preset='kilosort_like',
+                            folder=MOTION_PATH,
+                            output_motion_info=True, **job_kwargs)
+        rec_mc.save(folder=PREPROC_PATH,**job_kwargs)      
     else:
-        print('Loading preprocessed data...')
+        pass
 
+    # Load preprocessed data on disk
     recording = si.load_extractor(PREPROC_PATH)
+    print('Loading preprocessed data...')
     sr = recording.get_sampling_frequency()
     print(f"loaded recording from {PREPROC_PATH}")
     
-    # Motion data
+    # Plot motion data
     print('Loading motion info')
     motion_info = si.load_motion_info(MOTION_PATH)
-    if  not MOTION_PATH.joinpath('driftmap.png').exists():
+    if not MOTION_PATH.joinpath('driftmap.png').exists():
         fig = plt.figure(figsize=(14, 8))
         si.plot_motion(motion_info, figure=fig, 
                     color_amplitude=True, amplitude_cmap='inferno', scatter_decimate=10)
@@ -118,113 +150,64 @@ def run_probe(probe_src,stream,probe_local,testing=False):
     
 
     # Run sorter
-
     if SORT_PATH.exists():
         print('='*100)
         print('Found sorting. Loading...')
-        sort_pyks = si.read_kilosort(SORT_PATH.joinpath('sorter_output/output'))
+        sort_rez = si.read_kilosort(SORT_PATH.joinpath('sorter_output'))
         print('loaded.')
     else:
-        sort_pyks = ss.run_sorter('pykilosort',recording, output_folder=SORT_PATH,verbose=True,**sorter_params,**job_kwargs)
-        print('Deleting temporary sort files...')
-        files_to_move = SORT_PATH.rglob('_iblqc_*')
-        for fn in files_to_move:
-            shutil.copy(fn,SORT_PATH.joinpath(fn.name))
-        # --- CLEAN UP FROM SORTING --- #
-
-        # delete kilosort temp paths
-        temp_path = list(SORT_PATH.rglob('.kilosort'))[0]
-        shutil.rmtree(temp_path)
-        print('deleted.')
+        sort_rez = ss.run_sorter('kilosort3',recording, output_folder=SORT_PATH,verbose=True,**sorter_params,**job_kwargs)
+    temp_wh_fn = SORT_PATH.joinpath('sorter_output/temp_wh.dat')
+    if temp_wh_fn.exists():
+        print(f'Removing KS temp_wh.dat: {temp_wh_fn}')
+        os.remove(temp_wh_fn)
     
-    print('Removing redundant spikes...')
-
-    # sort_pyks = si.remove_duplicated_spikes(sort_pyks,censored_period_ms=0.166)
-    # sort_pyks = si.remove_redundant_units(sort_pyks,align=False,remove_strategy='max_spikes')
-
-    
-
-    print('='*100)
     if WVFM_PATH.exists():
-        print('='*100)
-        print('Waveforms found. Loading...')
+        print('Found waveforms. Loading',end='...')
         we = si.load_waveforms(WVFM_PATH)
+        sort_rez = we.sorting
+        print('loaded')
+
     else:
         print('Extracting waveforms')
-        we = si.extract_waveforms(recording,sort_pyks,folder=WVFM_PATH,method='best_channels',num_channels=8,**job_kwargs)
-    
-    
-    pyks_path = Path(sort_pyks.get_annotation('phy_folder'))
+        we = si.extract_waveforms(recording,sort_rez,folder=WVFM_PATH,sparse=False,**job_kwargs)
+        print('Removing redundant spikes...')
+        sort_rez = si.remove_duplicated_spikes(sort_rez,censored_period_ms=0.166)
+        sort_rez = si.remove_redundant_units(sort_rez,align=False,remove_strategy='max_spikes')
+        we = si.extract_waveforms(recording,sort_rez,sparse=False,folder=WVFM_PATH,overwrite=True,**job_kwargs)
+    sparsity = si.compute_sparsity(we,num_channels=9)
 
-    
     # COMPUTE METRICS
-    print('Computing metrics')
+    
     # Needs fewer jobs to avoid a memory error?
-    amplitudes = si.compute_spike_amplitudes(we,load_if_exists=True, n_jobs=6,chunk_duration='500ms')
+    amplitudes = si.compute_spike_amplitudes(we,load_if_exists=True, n_jobs=4,chunk_duration='500ms')
     if RUN_PC:
         pca = si.compute_principal_components(waveform_extractor=we, n_components=5, load_if_exists=True,mode='by_channel_local')
     
 
-
     # Compute metrics 
-    # metrics = si.compute_quality_metrics(waveform_extractor=we,load_if_exists=True)
-    if USE_TEMPLATE_METRICS:
-        template_metrics = si.compute_template_metrics(we,load_if_exists=True)
+    print('Computing metrics')
+    metrics = si.compute_quality_metrics(waveform_extractor=we,load_if_exists=True)
+    print('\ttemplate metrics')
+    template_metrics = si.compute_template_metrics(we,load_if_exists=True)
 
-    # spike_locations = si.compute_spike_locations(we, method="center_of_mass", load_if_exists=True, **job_kwargs)
+    # # Perform automated quality control
+    query = f'amplitude_cutoff<{AMPLITUDE_CUTOFF} & sliding_rp_violation<{SLIDING_RP} & amplitude_median>{AMP_THRESH}'
+    good_unit_ids = metrics.query(query).index
+    metrics['group'] = 'mua'
+    metrics.loc[good_unit_ids,'group']='good'
 
-    # Perform automated quality control
-    # query = f'amplitude_cutoff<{AMPLITUDE_CUTOFF} & sliding_rp_violation<{SLIDING_RP} & amplitude_median>{AMP_THRESH}'
-    # good_unit_ids = metrics.query(query).index
-    # metrics['group'] = 'mua'
-    # metrics.loc[good_unit_ids,'group']='good'
-    # metrics["peak_chan"] = pd.Series(si.get_template_extremum_channel(we, peak_sign="neg", outputs="index"))
-    if USE_TEMPLATE_METRICS:
-        metrics = pd.concat([metrics,template_metrics],axis=1)
-
+    
     print("Exporting to phy")
-    # Phy will not work if sparsity is incorrect (i.e., if computed waveforms are sparse, we need a sparsity object) (Does it not need a sort?)
     # Needs fewer jobs to avoid a memory error?
-    si.export_to_phy(waveform_extractor=we,output_folder=PHY_DEST,use_relative_path=False,copy_binary=False,compute_pc_features=False,n_jobs=4,chunk_duration='500ms')
-    
+    si.export_to_phy(waveform_extractor=we,output_folder=PHY_DEST,
+                    sparsity=sparsity,
+                    use_relative_path=True,copy_binary=True,
+                    compute_pc_features=False,n_jobs=10,chunk_duration='500ms')
+
     print('Getting suggested merges')
-    # auto_merge_candidates = si.get_potential_auto_merge(we)
-    # pd.DataFrame(auto_merge_candidates).to_csv(PHY_DEST.joinpath('potential_merges.tsv'),sep='\t')
-
-    print('making driftmap')
-    # ---- Make driftmap ---- 
-    if PLOT_DRIFTMAP:
-        m = model.TemplateModel(dir_path=pyks_path,
-                                dat_path=pyks_path.parent.joinpath('recording.dat'), 
-                                sample_rate=sr,
-                                n_channels_dat=recording.get_num_channels())
-
-        depths_unc = m.get_depths()
-        ts_unc = m.spike_times
-        ts_corr = sort_pyks.to_spike_vector()['sample_index']/sort_pyks.get_sampling_frequency()
-        drift = np.load(pyks_path.joinpath('drift.um.npy'))
-        drift_times = np.load(pyks_path.joinpath('drift.times.npy'))
-
-    
-        f = plt.figure(figsize=(18,7))
-        gs = f.add_gridspec(nrows=7,ncols=2)
-        ax_drift = f.add_subplot(gs[0,0])
-        ax_rast = f.add_subplot(gs[1:,0],sharex=ax_drift)
-        ax_drift.plot(drift_times,drift)
-        ax_drift.set_ylabel('Drift ($\mu$m)')
-        driftmap(ts_unc,depths_unc,t_bin=0.01,ax=ax_rast)
-        ax_drift.set_title('Uncorrected')
-
-        ax_drift2 = f.add_subplot(gs[0,1],sharex=ax_drift,sharey=ax_drift)
-        ax_rast2 = f.add_subplot(gs[1:,1],sharex=ax_drift,sharey=ax_rast)
-        ax_drift2.plot(drift_times,drift)
-        ax_drift2.set_ylabel('Drift ($\mu$m)')
-        ax_drift2.set_title('Drift Corrected')
-        driftmap(ts_corr,spike_locations['y'],t_bin=0.01,ax=ax_rast2)
-        plt.tight_layout()
-        plt.savefig(PHY_DEST.joinpath('driftmaps.png'),dpi=300,bbox_inches='tight')
-        plt.close('all')
-
+    auto_merge_candidates = si.get_potential_auto_merge(we)
+    pd.DataFrame(auto_merge_candidates).to_csv(PHY_DEST.joinpath('potential_merges.tsv'),sep='\t')
 
     # TODO: check for optotagging, bombcell?
     print('Done sorting!')
@@ -253,7 +236,7 @@ def main(mouse_path,dest,testing,move_final):
         for probe_path in probe_list:
             stream = re.search('imec[0-9]',str(probe_path)).group()+'.ap'
             probe_local = gate_local.joinpath(''+stream[:-3])
-            probe_dest = gate_dest.joinpath('si_'+probe_local.name)
+            probe_dest = gate_dest.joinpath('si-sort')
 
             print('='*100)
             print('Running SI kilosort:')
@@ -266,9 +249,11 @@ def main(mouse_path,dest,testing,move_final):
                 if probe_dest.exists():
                     print(f'WARNING: Not moving because target {probe_dest} already exists')
                 else:
+
                     print(f'Moving sorted data from {probe_local} to {probe_dest}')
                     probe_dest.mkdir(parents=True,exist_ok=False)
                     shutil.move(str(probe_local),str(probe_dest))
+
 
 
 if __name__=='__main__':
