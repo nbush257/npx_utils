@@ -178,7 +178,7 @@ def batch(fn, pdiff_chan, flowmeter_chan, dia_chan, ekg_chan, temp_chan, v_in, i
                     # try:
                     main(fname,pdiff_chan,flowmeter_chan,dia_chan,ekg_chan,temp_chan,v_in,inhale_pos,root)
                     if pdiff_chan>=0 or flowmeter_chan>=0:
-                        matlab_cmd_string = "matlab -nosplash -nodesktop -nojvm -r bm_mat_proc('" + fname + "')"
+                        matlab_cmd_string = "matlab -batch bm_mat_proc('" + fname + "')"
                         os.system(matlab_cmd_string)
                     else:
                         print('No airflow signal so not performing BM')
@@ -187,7 +187,7 @@ def batch(fn, pdiff_chan, flowmeter_chan, dia_chan, ekg_chan, temp_chan, v_in, i
         root = os.path.split(fn)[0]
         main(fn, pdiff_chan, flowmeter_chan, dia_chan, ekg_chan, temp_chan, v_in, inhale_pos, root)
         if pdiff_chan>=0 or flowmeter_chan>=0:
-            matlab_cmd_string = "matlab -nosplash -nodesktop -nojvm -r bm_mat_proc('" + fn + "')"
+            matlab_cmd_string = "matlab -batch bm_mat_proc('" + fn + "')"
             os.system(matlab_cmd_string)
         else:
             print('No pdiff signal so not performing BM')
