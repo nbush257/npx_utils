@@ -48,7 +48,6 @@ MIN_SPIKES = 500
 
 RUN_PC = False
 USE_TEMPLATE_METRICS = False
-PLOT_DRIFTMAP =False
 
 if sys.platform == 'win32':
     SCRATCH_DIR = Path(r'D:/si_temp')
@@ -222,6 +221,9 @@ def main(mouse_path,dest,testing,move_final):
     run_name = mouse_path.name
     gate_list = list(mouse_path.glob(f'*{run_name}*'))
     run_local = SCRATCH_DIR.joinpath(run_name+'_si-sort')
+    if move_final:
+        print(f'WARNING: will remove {run_local} after sorting')
+    print(f'Gate List: {gate_list}')
     
     for gate_path in gate_list:
         if dest is not None:
@@ -233,6 +235,7 @@ def main(mouse_path,dest,testing,move_final):
         gate_dest = run_dest.joinpath(gate_path.name)
         
         probe_list = list(gate_path.glob(f'*{run_name}*imec*'))
+        
         for probe_path in probe_list:
             stream = re.search('imec[0-9]',str(probe_path)).group()+'.ap'
             probe_local = gate_local.joinpath(''+stream[:-3])
@@ -253,6 +256,9 @@ def main(mouse_path,dest,testing,move_final):
                     print(f'Moving sorted data from {probe_local} to {probe_dest}')
                     probe_dest.mkdir(parents=True,exist_ok=False)
                     shutil.move(str(probe_local),str(probe_dest))
+    if move_final:
+        print(f"Removing local {run_local}")
+        shutil.rmtree(str(run_local))
 
 
 
