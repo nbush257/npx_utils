@@ -19,6 +19,7 @@ import re
 import logging
 import sys
 import os
+import time
 
 # May want to do a "remove duplicate spikes" after manual sorting  - this would allow manual sorting to merge  units that have some, but not a majority, of duplicated spikes
 
@@ -36,9 +37,8 @@ import os
 #TODO: Refactor into smaller functions?
 #TODO: Log sort progress?
 
-job_kwargs = dict(chunk_duration="500ms", n_jobs=10, progress_bar=True)
+job_kwargs = dict(chunk_duration="1s", n_jobs=15, progress_bar=True)
 we_kwargs = dict()
-KS3_ROOT = r'C:\Users\nbush\helpers\kilosort3'
 
 # QC presets
 AMPLITUDE_CUTOFF = 0.1
@@ -47,20 +47,29 @@ AMP_THRESH = 40.
 MIN_SPIKES = 500
 
 RUN_PC = False
-USE_TEMPLATE_METRICS = False
+
+cleanup_local = True  # initialize - determines whetehr to remove the local folder at the end
 
 if sys.platform == 'win32':
     SCRATCH_DIR = Path(r'D:/si_temp')
+    KS3_ROOT = r'C:\Users\nbush\helpers\kilosort3'
+    IS_HPC=False
 else:
     import joblib
     SCRATCH_DIR = Path('/gpfs/home/nbush/si_scratch')
     job_kwargs = dict(chunk_duration="1s", n_jobs=joblib.cpu_count(), progress_bar=True)
     import matplotlib
     matplotlib.use('Agg')
+    IS_HPC=True
+
+def print_elapsed_time(start_time):
+    print(f'Elapsed time: {time.time()-start_time:0.0f} seconds')
 
 
 def run_probe(probe_src,stream,probe_local,testing=False):
-    si.Kilosort3Sorter.set_kilosort3_path(KS3_ROOT)
+    start_time = time.time()
+    if not IS_HPC:
+        si.Kilosort3Sorter.set_kilosort3_path(KS3_ROOT)
 
     # Set paths
     PHY_DEST = probe_local.joinpath('phy_output')
@@ -103,13 +112,13 @@ def run_probe(probe_src,stream,probe_local,testing=False):
         sample_bounds.to_csv(probe_local.joinpath('sequence.tsv'),sep='\t')
 
         # Preprocessing
-        print('Preprocessing IBL destripe...')
+        print('Preprocessing IBL destripe...',end='')
         rec_filtered = spre.highpass_filter(recording)
         rec_shifted = spre.phase_shift(rec_filtered)
         bad_channel_ids, all_channels = spre.detect_bad_channels(rec_shifted)
         rec_interpolated = spre.interpolate_bad_channels(rec_shifted, bad_channel_ids)
         rec_destriped = spre.highpass_spatial_filter(rec_interpolated)     
-
+        print('done')
         if MOTION_PATH.exists():
             print('Motion info loaded')
             motion_info = si.load_motion_info(MOTION_PATH)
@@ -120,22 +129,26 @@ def run_probe(probe_src,stream,probe_local,testing=False):
                                                         **motion_info['parameters']['interpolate_motion_kwargs'],
                                                         )
         else:
-            print('Motion correction KS-like')
+            print('Motion correction KS-like...',end='')
             rec_mc, motion_info = si.correct_motion(rec_destriped, preset='kilosort_like',
                             folder=MOTION_PATH,
                             output_motion_info=True, **job_kwargs)
-        rec_mc.save(folder=PREPROC_PATH,**job_kwargs)      
+            print('done')
+            print_elapsed_time(start_time)
+        
+        rec_mc.save(folder=PREPROC_PATH,**job_kwargs)     
+        print_elapsed_time(start_time) 
     else:
         pass
-
+    
     # Load preprocessed data on disk
     recording = si.load_extractor(PREPROC_PATH)
-    print('Loading preprocessed data...')
+    print('Loading preprocessed data...',end='')
     sr = recording.get_sampling_frequency()
     print(f"loaded recording from {PREPROC_PATH}")
     
     # Plot motion data
-    print('Loading motion info')
+    print('Loading motion info',end='')
     motion_info = si.load_motion_info(MOTION_PATH)
     if not MOTION_PATH.joinpath('driftmap.png').exists():
         fig = plt.figure(figsize=(14, 8))
@@ -146,16 +159,22 @@ def run_probe(probe_src,stream,probe_local,testing=False):
             ax.set_xlim(30,60)
         plt.savefig(MOTION_PATH.joinpath('driftmap_zoom.png'),dpi=300)
     print('loaded')
-    
+    print_elapsed_time(start_time) 
+
 
     # Run sorter
     if SORT_PATH.exists():
         print('='*100)
-        print('Found sorting. Loading...')
+        print('Found sorting. Loading...',end='')
         sort_rez = si.read_kilosort(SORT_PATH.joinpath('sorter_output'))
         print('loaded.')
     else:
-        sort_rez = ss.run_sorter('kilosort3',recording, output_folder=SORT_PATH,verbose=True,**sorter_params,**job_kwargs)
+        if IS_HPC:
+            sort_rez = ss.run_sorter('kilosort3',recording, output_folder=SORT_PATH,verbose=True,singularity_image=True,**sorter_params,**job_kwargs)
+        else:
+            sort_rez = ss.run_sorter('kilosort3',recording, output_folder=SORT_PATH,verbose=True,**sorter_params,**job_kwargs)
+    print_elapsed_time(start_time) 
+
     temp_wh_fn = SORT_PATH.joinpath('sorter_output/temp_wh.dat')
     if temp_wh_fn.exists():
         print(f'Removing KS temp_wh.dat: {temp_wh_fn}')
@@ -168,20 +187,24 @@ def run_probe(probe_src,stream,probe_local,testing=False):
         print('loaded')
 
     else:
-        print('Extracting waveforms')
+        print('Extracting waveforms...',end='')
         we = si.extract_waveforms(recording,sort_rez,folder=WVFM_PATH,sparse=False,**job_kwargs)
-        print('Removing redundant spikes...')
+        print('done')
+        print('Removing redundant spikes...',end='')
         sort_rez = si.remove_duplicated_spikes(sort_rez,censored_period_ms=0.166)
         sort_rez = si.remove_redundant_units(sort_rez,align=False,remove_strategy='max_spikes')
         we = si.extract_waveforms(recording,sort_rez,sparse=False,folder=WVFM_PATH,overwrite=True,**job_kwargs)
+        print('done')
+    print('Comuting sparsity',end='')
     sparsity = si.compute_sparsity(we,num_channels=9)
+    print('done')
+    print_elapsed_time(start_time) 
 
     # COMPUTE METRICS
-    
     # Needs fewer jobs to avoid a memory error?
     amplitudes = si.compute_spike_amplitudes(we,load_if_exists=True, n_jobs=4,chunk_duration='500ms')
     if RUN_PC:
-        pca = si.compute_principal_components(waveform_extractor=we, n_components=5, load_if_exists=True,mode='by_channel_local')
+        pca = si.compute_principal_components(waveform_extractor=we, n_components=5, load_if_exists=True,mode='by_channel_local',**job_kwargs,sparsity=sparsity)
     
 
     # Compute metrics 
@@ -196,13 +219,13 @@ def run_probe(probe_src,stream,probe_local,testing=False):
     metrics['group'] = 'mua'
     metrics.loc[good_unit_ids,'group']='good'
 
-    
+    print_elapsed_time(start_time) 
     print("Exporting to phy")
     # Needs fewer jobs to avoid a memory error?
     si.export_to_phy(waveform_extractor=we,output_folder=PHY_DEST,
                     sparsity=sparsity,
                     use_relative_path=True,copy_binary=True,
-                    compute_pc_features=False,n_jobs=10,chunk_duration='500ms')
+                    compute_pc_features=False,**job_kwargs)
 
     print('Getting suggested merges')
     auto_merge_candidates = si.get_potential_auto_merge(we)
@@ -210,6 +233,8 @@ def run_probe(probe_src,stream,probe_local,testing=False):
 
     # TODO: check for optotagging, bombcell?
     print('Done sorting!')
+    print_elapsed_time(start_time) 
+
 
 @click.command()
 @click.argument('mouse_path')
@@ -251,12 +276,12 @@ def main(mouse_path,dest,testing,move_final):
             if move_final:
                 if probe_dest.exists():
                     print(f'WARNING: Not moving because target {probe_dest} already exists')
+                    cleanup_local = False
                 else:
-
                     print(f'Moving sorted data from {probe_local} to {probe_dest}')
                     probe_dest.mkdir(parents=True,exist_ok=False)
                     shutil.move(str(probe_local),str(probe_dest))
-    if move_final:
+    if move_final & cleanup_local:
         print(f"Removing local {run_local}")
         shutil.rmtree(str(run_local))
 
