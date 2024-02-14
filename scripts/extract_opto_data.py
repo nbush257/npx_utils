@@ -101,7 +101,7 @@ def main(gate_path,opto_chan,v_thresh):
     # print(ni_list)
     for ni_fn in ni_list:
         print(f'Processing {ni_fn}',end='...')
-        trig_string = re.search('t\d*.',ni_fn.stem).group()[:-1]
+        trig_string = re.search('t\d{1,3}',ni_fn.stem).group()
         df = process_rec(ni_fn,opto_chan=opto_chan,v_thresh=v_thresh)
         df.to_csv(ni_fn.parent.joinpath(f'optostims_{trig_string}.tsv'),sep='\t')
         print('done.')
