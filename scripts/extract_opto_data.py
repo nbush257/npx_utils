@@ -74,7 +74,7 @@ def get_opto_df(raw_opto,v_thresh,ni_sr,min_dur=0.001,max_dur=10):
 
     return(opto_df)
 
-def process_rec(ni_fn,opto_chan=6,v_thresh=0.5,**kwargs):
+def process_rec(ni_fn,opto_chan=5,v_thresh=0.5,**kwargs):
     '''
     Create a dataframe where each row is an opto pulse. 
     Information about the pulse timing, amplitude, and duration are created.
@@ -89,8 +89,8 @@ def process_rec(ni_fn,opto_chan=6,v_thresh=0.5,**kwargs):
 
 @click.command()
 @click.argument('gate_path' )
-@click.option('--opto_chan','-o',default=6,help = 'Analog channel of the optogenetic pulses')
-@click.option('--v_thresh','-v',default=0.5,help = 'voltage threshold to register a pulse')
+@click.option('--opto_chan','-o',default=5,help = 'Analog channel of the optogenetic pulses',show_default=True)
+@click.option('--v_thresh','-v',default=0.5,help = 'voltage threshold to register a pulse',show_default=True)
 def main(gate_path,opto_chan,v_thresh):
     opto_chan = int(opto_chan)
     v_thrsh = float(v_thresh)
