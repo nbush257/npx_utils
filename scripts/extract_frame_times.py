@@ -7,7 +7,7 @@ import re
 def process_rec(ni_fn,trig_chan=6,verbose=True):
     SR = spikeglx.Reader(ni_fn)
     trig = SR.read_sync_digital(_slice=slice(None,None))[:,trig_chan]
-    frame_samps = np.where(np.diff(trig)>0)[0]-1
+    frame_samps = np.where(np.diff(trig)>0)[0]+1
     frame_times = frame_samps/SR.fs
     n_frames = frame_samps.shape[0]
     framerate = np.mean(1/np.diff(frame_times))
