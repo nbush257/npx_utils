@@ -5,3 +5,6 @@
 .pyc
 __pycache__
 .ipynb_checkpoints/
+sort/.vscode/*
+sort/*.sif
+.gitignore*
