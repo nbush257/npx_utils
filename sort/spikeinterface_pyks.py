@@ -48,7 +48,6 @@ MIN_SPIKES = 500
 
 RUN_PC = False
 
-cleanup_local = True  # initialize - determines whetehr to remove the local folder at the end
 
 if sys.platform == 'win32':
     SCRATCH_DIR = Path(r'D:/si_temp')
@@ -242,6 +241,7 @@ def run_probe(probe_src,stream,probe_local,testing=False):
 @click.option('--testing',is_flag=True)
 @click.option('--move_final',is_flag=True)
 def main(mouse_path,dest,testing,move_final):
+    cleanup_local = True
     mouse_path = Path(mouse_path)
     run_name = mouse_path.name
     gate_list = list(mouse_path.glob(f'*{run_name}*'))
