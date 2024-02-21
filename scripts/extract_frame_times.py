@@ -3,6 +3,9 @@ import spikeglx
 from pathlib import Path
 import numpy as np
 import re
+import neurodsp.utils
+#TODO: synchronize
+
 
 def process_rec(ni_fn,trig_chan=6,verbose=True):
     SR = spikeglx.Reader(ni_fn)
