@@ -97,7 +97,9 @@ def get_sync(SR_ni,SR_imec):
         SR_ni (_type_): _description_
         SR_imec (_type_): _description_
     """    
+    print('Extracting NI sync signal')
     ni_sync_signal = SR_ni.read_sync_digital(_slice=slice(None,None))[:,7]
+    print('Extracting IMEC sync signal')
     imec_sync_signal = SR_imec.read_sync_digital(_slice=slice(None,None))[:,6]
     ni_ts = np.where(np.diff(ni_sync_signal)==1)[0] / SR_ni.fs
     imec_ts = np.where(np.diff(imec_sync_signal)==1)[0] / SR_imec.fs
@@ -127,9 +129,9 @@ def main(gate_path,opto_chan,v_thresh):
     ni_list = list(gate_path.glob('*nidq.bin'))
     ni_list.sort()
     imec_fn = list(gate_path.rglob('*.ap.bin'))[0]
-    # print(ni_list)
+    print(ni_list)
     for ni_fn in ni_list:
-        print(f'Processing {ni_fn}',end='...')
+        print(f'Processing {ni_fn}')
         trig_string = re.search('t\d{1,3}',ni_fn.stem).group()
         SR_ni = spikeglx.Reader(ni_fn)
         SR_imec = spikeglx.Reader(imec_fn)

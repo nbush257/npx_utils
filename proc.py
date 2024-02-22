@@ -1,17 +1,28 @@
 import neo
 import quantities
 from scipy.signal import hilbert,savgol_filter
-import spykes
+try:
+    import spykes
+except:
+    pass
 import scipy.signal
 import scipy.stats
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from spykes.plot import NeuroVis
+try:
+    from spykes.plot import NeuroVis
+    has_spikes = True
+except:
+    has_spikes=False
 import sys
 import sklearn
 import scipy.ndimage
-import elephant
+try:
+    import elephant
+    has_elephant=True
+except:
+    has_elephant=False
 import quantities as pq
 import warnings
 from scipy.ndimage import gaussian_filter1d
@@ -281,36 +292,36 @@ def bin_trains(ts,idx,max_time=None,binsize=0.05,start_time=5):
         raster[cell, :-1]= np.histogram(cell_ts, bins)[0]
     return(raster,cell_id,bins)
 
+if has_spikes:
+    def get_opto_tagged(ts,pulse_on,thresh=0.25,lockout=2,max=9):
+        '''
 
-def get_opto_tagged(ts,pulse_on,thresh=0.25,lockout=2,max=9):
-    '''
+        :param ts: Spike times
+        :param pulse_on: opto onset times
+        :param thresh: How many spikes need to be post stimulus to count as tagges
+        :param lockout: time window around onset to exclude (for light artifacts)
+        :param max: max time window to consider
+        :return: is_tagged: boolean if this neuron has been classified as optotagged
+        '''
+        neuron = spykes.NeuroVis(ts)
+        df = pd.DataFrame()
+        df['opto'] = pulse_on
+        pre = neuron.get_spikecounts(event='opto', df=df, window=[-max, -lockout])
+        post = neuron.get_spikecounts(event='opto', df=df, window=[lockout, max])
 
-    :param ts: Spike times
-    :param pulse_on: opto onset times
-    :param thresh: How many spikes need to be post stimulus to count as tagges
-    :param lockout: time window around onset to exclude (for light artifacts)
-    :param max: max time window to consider
-    :return: is_tagged: boolean if this neuron has been classified as optotagged
-    '''
-    neuron = spykes.NeuroVis(ts)
-    df = pd.DataFrame()
-    df['opto'] = pulse_on
-    pre = neuron.get_spikecounts(event='opto', df=df, window=[-max, -lockout])
-    post = neuron.get_spikecounts(event='opto', df=df, window=[lockout, max])
+        tot_spikes = np.sum(post)
 
-    tot_spikes = np.sum(post)
-
-    post = np.mean(post)
-    pre = np.mean(pre)
-    normed_spikes = ((post-pre) / (pre + post))
-    if normed_spikes>thresh:
-        is_tagged = True
-    else:
-        is_tagged= False
-    # If the number of spikes is less than 75% of the number of stimulations, do not tag
-    if tot_spikes<.75*len(pulse_on):
-        is_tagged=False
-    return(is_tagged)
+        post = np.mean(post)
+        pre = np.mean(pre)
+        normed_spikes = ((post-pre) / (pre + post))
+        if normed_spikes>thresh:
+            is_tagged = True
+        else:
+            is_tagged= False
+        # If the number of spikes is less than 75% of the number of stimulations, do not tag
+        if tot_spikes<.75*len(pulse_on):
+            is_tagged=False
+        return(is_tagged)
 
 
 def get_event_triggered_st(ts,idx,events,pre_win,post_win):
@@ -339,47 +350,47 @@ def get_event_triggered_st(ts,idx,events,pre_win,post_win):
         pop.append(trains)
     return(pop)
 
+if has_spikes:
+    def calc_is_mod(ts,events,pre_win=-0.1,post_win=.150):
+        '''
+        Calculate whether the spike rate of a neuron is altered after an event
 
-def calc_is_mod(ts,events,pre_win=-0.1,post_win=.150):
-    '''
-    Calculate whether the spike rate of a neuron is altered after an event
+        :param ts: all spike times of a given neuron
+        :param events: event times
+        :param pre_win: window before event to consider (must be negative) in seconds
+        :param post_win: window_after event to consider (must be positive) in seconds
+        :return:
+                is_mod: boolean result of wilcoxon rank sum test
+                mod_depth: mean firing rate modulation (post-pre)/(pre+post)
+        '''
+        raise(ValueError('Not Robust Do not use this'))
+        neuron = NeuroVis(ts)
+        df= pd.DataFrame()
+        df['event'] = events
+        pre = neuron.get_spikecounts('event', df=df, window=[pre_win*1000, 0])
+        post = neuron.get_spikecounts('event', df=df, window=[0, post_win*1000])
 
-    :param ts: all spike times of a given neuron
-    :param events: event times
-    :param pre_win: window before event to consider (must be negative) in seconds
-    :param post_win: window_after event to consider (must be positive) in seconds
-    :return:
-            is_mod: boolean result of wilcoxon rank sum test
-            mod_depth: mean firing rate modulation (post-pre)/(pre+post)
-    '''
-    raise(ValueError('Not Robust Do not use this'))
-    neuron = NeuroVis(ts)
-    df= pd.DataFrame()
-    df['event'] = events
-    pre = neuron.get_spikecounts('event', df=df, window=[pre_win*1000, 0])
-    post = neuron.get_spikecounts('event', df=df, window=[0, post_win*1000])
+        # Catch instances of fewer than 100 spikes
+        if np.sum(pre+post)<100:
+            is_mod=False
+            effect = np.nan
+            return(is_mod,effect)
 
-    # Catch instances of fewer than 100 spikes
-    if np.sum(pre+post)<100:
-        is_mod=False
-        effect = np.nan
+        # Normalize for time
+        pre =pre / np.abs(pre_win)
+        post=post / post_win
+
+        # Calculate signifigance
+        p = scipy.stats.wilcoxon(pre,post).pvalue
+
+        if p<0.05:
+            is_mod=True
+        else:
+            is_mod=False
+
+
+        effect = np.nanmean((post-pre)/(post+pre))
         return(is_mod,effect)
-
-    # Normalize for time
-    pre =pre / np.abs(pre_win)
-    post=post / post_win
-
-    # Calculate signifigance
-    p = scipy.stats.wilcoxon(pre,post).pvalue
-
-    if p<0.05:
-        is_mod=True
-    else:
-        is_mod=False
-
-
-    effect = np.nanmean((post-pre)/(post+pre))
-    return(is_mod,effect)
 
 
 def pop_is_mod(spiketimes,cell_id,events,**kwargs):
@@ -616,37 +627,37 @@ def get_sta(x,tvec,ts,pre_win=0.5,post_win=None):
 
     return(sta)
 
+if has_elephant:
+    def get_coherence(ts,x,x_sr,t0,tf):
+        '''
+        Compute the coherence from spike times and an analog signal
+        :param ts: spiketimes (in s). Can be a quantity
+        :param x: the analog signal to compare against
+        :param x_sr: the sampling rate of the analog signal
+        :param t0: the first time to consider (in s). Can be a quantity
+        :param tf: the last time to consider (in s). Can be a quantity
+        :return:    coh - the maximum coherence
+                    freqs - the frequencies that make up the coherence plot
+                    sfc - the coherences at each frequency in freqs
+        '''
+        if type(t0) is not pq.quantity.Quantity:
+            t0 = t0*pq.s
+        if type(tf) is not pq.quantity.Quantity:
+            tf = tf*pq.s
+        if type(ts) is not pq.quantity.Quantity:
+            ts = ts*pq.s
 
-def get_coherence(ts,x,x_sr,t0,tf):
-    '''
-    Compute the coherence from spike times and an analog signal
-    :param ts: spiketimes (in s). Can be a quantity
-    :param x: the analog signal to compare against
-    :param x_sr: the sampling rate of the analog signal
-    :param t0: the first time to consider (in s). Can be a quantity
-    :param tf: the last time to consider (in s). Can be a quantity
-    :return:    coh - the maximum coherence
-                freqs - the frequencies that make up the coherence plot
-                sfc - the coherences at each frequency in freqs
-    '''
-    if type(t0) is not pq.quantity.Quantity:
-        t0 = t0*pq.s
-    if type(tf) is not pq.quantity.Quantity:
-        tf = tf*pq.s
-    if type(ts) is not pq.quantity.Quantity:
-        ts = ts*pq.s
+        s0 = int(t0*x_sr)
+        sf = int(tf*x_sr)
+        x_slice = x[s0:sf]
+        sig = neo.AnalogSignal(x_slice, units='V', sampling_rate=x_sr * pq.Hz,t_start=t0)
+        ts = ts[ts<sig.t_stop]
+        ts = ts[ts>sig.t_start]
+        spt = neo.SpikeTrain(ts,t_start = sig.t_start,t_stop=sig.t_stop,units=pq.s)
+        sfc, freqs = elephant.sta.spike_field_coherence(sig, spt, nperseg=8192)
+        coh = np.max(sfc.magnitude)
 
-    s0 = int(t0*x_sr)
-    sf = int(tf*x_sr)
-    x_slice = x[s0:sf]
-    sig = neo.AnalogSignal(x_slice, units='V', sampling_rate=x_sr * pq.Hz,t_start=t0)
-    ts = ts[ts<sig.t_stop]
-    ts = ts[ts>sig.t_start]
-    spt = neo.SpikeTrain(ts,t_start = sig.t_start,t_stop=sig.t_stop,units=pq.s)
-    sfc, freqs = elephant.sta.spike_field_coherence(sig, spt, nperseg=8192)
-    coh = np.max(sfc.magnitude)
-
-    return(coh,sfc,freqs)
+        return(coh,sfc,freqs)
 
 
 def get_coherence_all(spikes,x,x_sr,t0,tf,method='static'):
@@ -810,48 +821,48 @@ def raster2tensor(raster,raster_bins,events,pre = .100,post = .200):
 def calc_is_mod_MI(ts,events,pre_win=-0.25,post_win=0.25):
     pass
 
+if has_spikes:
+    def is_mod_v2(ts, events, pre_win=-0.1, post_win=0.1, binsize=0.01, thresh=2):
+        '''
+        Compares the Mean and SEM of pre and post event. Needs tweeaking probably
+        :param ts:
+        :param events:
+        :param pre_win:
+        :param post_win:
+        :param binsize:
+        :param thresh:
+        :return:
+        '''
+        neuron = NeuroVis(ts)
+        df = pd.DataFrame()
+        if type(events) is pd.core.series.Series:
+            events = events.values
+        df['event'] = events
+        df['event_jittered'] = np.random.uniform(events[0], events[-1], len(events))
 
-def is_mod_v2(ts, events, pre_win=-0.1, post_win=0.1, binsize=0.01, thresh=2):
-    '''
-    Compares the Mean and SEM of pre and post event. Needs tweeaking probably
-    :param ts:
-    :param events:
-    :param pre_win:
-    :param post_win:
-    :param binsize:
-    :param thresh:
-    :return:
-    '''
-    neuron = NeuroVis(ts)
-    df = pd.DataFrame()
-    if type(events) is pd.core.series.Series:
-        events = events.values
-    df['event'] = events
-    df['event_jittered'] = np.random.uniform(events[0], events[-1], len(events))
-
-    psth_true = neuron.get_psth(df=df, event='event', plot=False, binsize=binsize * 1000,
-                                window=[pre_win * 1000, post_win * 1000])
-    psth_jittered = neuron.get_psth(df=df, event='event_jittered', plot=False, binsize=binsize * 1000,
+        psth_true = neuron.get_psth(df=df, event='event', plot=False, binsize=binsize * 1000,
                                     window=[pre_win * 1000, post_win * 1000])
+        psth_jittered = neuron.get_psth(df=df, event='event_jittered', plot=False, binsize=binsize * 1000,
+                                        window=[pre_win * 1000, post_win * 1000])
 
-    true_m = psth_true['data'][0]['mean']
-    true_sem = psth_true['data'][0]['sem'] * thresh
+        true_m = psth_true['data'][0]['mean']
+        true_sem = psth_true['data'][0]['sem'] * thresh
 
-    jit_m = psth_jittered['data'][0]['mean']
-    jit_sem = psth_jittered['data'][0]['sem'] * thresh
+        jit_m = psth_jittered['data'][0]['mean']
+        jit_sem = psth_jittered['data'][0]['sem'] * thresh
 
-    true_lb = true_m - true_sem
-    true_ub = true_m + true_sem
+        true_lb = true_m - true_sem
+        true_ub = true_m + true_sem
 
-    jit_lb = jit_m - jit_sem
-    jit_ub = jit_m + jit_sem
+        jit_lb = jit_m - jit_sem
+        jit_ub = jit_m + jit_sem
 
-    abv = true_lb > jit_ub
-    below = true_ub < jit_lb
-    between = np.logical_or(abv, below)
+        abv = true_lb > jit_ub
+        below = true_ub < jit_lb
+        between = np.logical_or(abv, below)
 
-    mod = np.any(between)
-    return (mod)
+        mod = np.any(between)
+        return (mod)
 
 
 def compute_occlusions_and_apnea(breaths,aux,thresh=0.1):
