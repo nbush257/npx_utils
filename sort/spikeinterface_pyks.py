@@ -47,10 +47,11 @@ AMP_THRESH = 40.
 MIN_SPIKES = 500
 
 RUN_PC = False
-
+MOTION_PRESET ='kilosort_like' # 'kilosort_like','nonrigid_accurate'
+SORTER = 'kilosort3' # 'pykilosort','kilosort3'
 
 if sys.platform == 'win32':
-    SCRATCH_DIR = Path(r'D:/si_temp')
+    SCRATCH_DIR = Path(r'D:/si_temp2')
     KS3_ROOT = r'C:\Users\nbush\helpers\kilosort3'
     IS_HPC=False
 else:
@@ -73,6 +74,7 @@ def run_probe(probe_src,stream,probe_local,testing=False):
     # Set paths
     PHY_DEST = probe_local.joinpath('phy_output')
     SORT_PATH = probe_local.joinpath(f'.ks3')
+    SORT_PATH = probe_local.joinpath(f'.pyks')
     WVFM_PATH = SORT_PATH.joinpath('.wvfm')
     PREPROC_PATH = probe_local.joinpath('.preproc')
     MOTION_PATH = probe_local.joinpath('.motion')
@@ -83,8 +85,9 @@ def run_probe(probe_src,stream,probe_local,testing=False):
 
     # SET SORT PARAMETERS
     sorter_params = {}
-    sorter_params['car'] = False
-    sorter_params['do_correction'] = False
+    if SORTER == "kilosort3":
+        sorter_params['car'] = False
+        sorter_params['do_correction'] = False
 
 
     # POINT TO RECORDING and concatenate
@@ -116,7 +119,8 @@ def run_probe(probe_src,stream,probe_local,testing=False):
         rec_shifted = spre.phase_shift(rec_filtered)
         bad_channel_ids, all_channels = spre.detect_bad_channels(rec_shifted)
         rec_interpolated = spre.interpolate_bad_channels(rec_shifted, bad_channel_ids)
-        rec_destriped = spre.highpass_spatial_filter(rec_interpolated)     
+        rec_destriped = spre.highpass_spatial_filter(rec_interpolated)    
+        rec_mc = rec_destriped 
         print('done')
         if MOTION_PATH.exists():
             print('Motion info loaded')
@@ -129,7 +133,7 @@ def run_probe(probe_src,stream,probe_local,testing=False):
                                                         )
         else:
             print('Motion correction KS-like...',end='')
-            rec_mc, motion_info = si.correct_motion(rec_destriped, preset='kilosort_like',
+            rec_mc, motion_info = si.correct_motion(rec_destriped, preset=MOTION_PRESET,
                             folder=MOTION_PATH,
                             output_motion_info=True, **job_kwargs)
             print('done')
@@ -165,16 +169,16 @@ def run_probe(probe_src,stream,probe_local,testing=False):
     if SORT_PATH.exists():
         print('='*100)
         print('Found sorting. Loading...',end='')
-        sort_rez = si.read_kilosort(SORT_PATH.joinpath('sorter_output'))
+        sort_rez = si.read_kilosort(SORT_PATH.joinpath('sorter_output/output'))
         print('loaded.')
     else:
         if IS_HPC:
-            sort_rez = ss.run_sorter('kilosort3',recording, output_folder=SORT_PATH,verbose=True,singularity_image=True,**sorter_params,**job_kwargs)
+            sort_rez = ss.run_sorter(SORTER,recording, output_folder=SORT_PATH,verbose=True,singularity_image=True,**sorter_params,**job_kwargs)
         else:
-            sort_rez = ss.run_sorter('kilosort3',recording, output_folder=SORT_PATH,verbose=True,**sorter_params,**job_kwargs)
+            sort_rez = ss.run_sorter(SORTER,recording, output_folder=SORT_PATH,verbose=True,**sorter_params,**job_kwargs)
     print_elapsed_time(start_time) 
 
-    temp_wh_fn = SORT_PATH.joinpath('sorter_output/temp_wh.dat')
+    temp_wh_fn = SORT_PATH.joinpath('sorter_output/output/temp_wh.dat')
     if temp_wh_fn.exists():
         print(f'Removing KS temp_wh.dat: {temp_wh_fn}')
         os.remove(temp_wh_fn)
@@ -222,7 +226,7 @@ def run_probe(probe_src,stream,probe_local,testing=False):
     print("Exporting to phy")
     # Needs fewer jobs to avoid a memory error?
     si.export_to_phy(waveform_extractor=we,output_folder=PHY_DEST,
-                    sparsity=sparsity,
+                    # sparsity=sparsity,
                     use_relative_path=True,copy_binary=True,
                     compute_pc_features=False,**job_kwargs)
 

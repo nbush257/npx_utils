@@ -121,17 +121,19 @@ def main(gate_path,opto_chan,v_thresh):
     opto_chan = int(opto_chan)
     v_thresh = float(v_thresh)
 
-    #TODO: Make general to operate on a run
     #TODO: Make general for arbitrary trials
 
-    
     gate_path = Path(gate_path)
     ni_list = list(gate_path.glob('*nidq.bin'))
     ni_list.sort()
-    imec_fn = list(gate_path.rglob('*.ap.bin'))[0]
+    imec_list = list(gate_path.rglob('*imec0*.ap.bin'))
+    imec_list.sort()
     print(ni_list)
-    for ni_fn in ni_list:
-        print(f'Processing {ni_fn}')
+    for ni_fn,imec_fn in zip(ni_list,imec_list):
+        ni_prefix = Path(ni_fn.stem).stem
+        imec_prefix = Path(Path(imec_fn.stem).stem).stem
+        assert imec_prefix==ni_prefix, f'NI name {ni_prefix} does not match IMEC name {imec_prefix}'
+        print(f'Processing ni: {ni_prefix}, imec: {imec_prefix}')
         trig_string = re.search('t\d{1,3}',ni_fn.stem).group()
         SR_ni = spikeglx.Reader(ni_fn)
         SR_imec = spikeglx.Reader(imec_fn)

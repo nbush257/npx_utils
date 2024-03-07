@@ -21,6 +21,11 @@ SALT_P_CUTOFF = 0.001
 MIN_PCT_TAGS_WITH_SPIKES = 33
 
 def extract_sr_from_params(params_fn):
+    """Get the sampling rate from the params.py file
+
+    Args:
+        params_fn (str or Path): Path to the params.py file
+    """    
     params_fn = Path(params_fn)
     with open(params_fn,'r') as fid:
         for line in fid:
@@ -30,7 +35,8 @@ def extract_sr_from_params(params_fn):
     return(sample_rate)
 
 def compute_pre_post_raster(spike_times,spike_clusters,cluster_ids,stim_times,stim_duration = None, window_time = 0.5,bin_size=0.001,mask_dur = 0.002): 
-    """Creates the rasters pre and post stimulation time. Optionally sets periods around onset and offset of light to zero (default behavior)
+    """Creates the rasters pre and post stimulation time. 
+    Optionally blanks periods around onset and offset of light to zero (default behavior)
 
     Args:
         spike_times (_type_): _description_
@@ -133,12 +139,17 @@ def compute_tagging_summary(spike_times,spike_clusters,cluster_ids,stim_times,wi
     """Computes the number of stims that a spike was observed and the pre and post stim spike rate
 
     Args:
-        spike_times (_type_): _description_
-        spike_clusters (_type_): _description_
-        cluster_ids (_type_): _description_
-        stim_times (_type_): _description_
+        spike_times (1D numpy array): _description_
+        spike_clusters (1D numpy array): _description_
+        cluster_ids (1D numpy array): _description_
+        stim_times (1D numpy array): _description_
         window_time (float, optional): _description_. Defaults to 0.01.
         bin_size (float, optional): _description_. Defaults to 0.001.
+    
+    Returns:
+        n_responsive_stims (1D numpy array): Number of stimulations that evoked at least one spike
+        pre_spikerate (1D numpy array): Spike rate in the window before stimulus onset
+        post_spikerate (1D numpy array): Spike rate in the windw after stimulus onset
     """    
     n_stims = stim_times.shape[0]
     pre_spikecounts,post_spikecounts = compute_pre_post_raster(spike_times,
@@ -200,6 +211,20 @@ def extract_tagging_from_logs(log_df,opto_df,verbose=True):
     
 
 def make_plots(spike_times,spike_clusters,cluster_ids,tags,save_folder,salt_rez=None,pre_time=0.05,post_time=0.05,wavelength = 473,cmap=None):
+    """ Plots rasters and PETHs for each cell aligned to 
+
+    Args:
+        spike_times (_type_): _description_
+        spike_clusters (_type_): _description_
+        cluster_ids (_type_): _description_
+        tags (_type_): _description_
+        save_folder (_type_): _description_
+        salt_rez (_type_, optional): _description_. Defaults to None.
+        pre_time (float, optional): _description_. Defaults to 0.05.
+        post_time (float, optional): _description_. Defaults to 0.05.
+        wavelength (int, optional): _description_. Defaults to 473.
+        cmap (_type_, optional): _description_. Defaults to None.
+    """    
     cmap = cmap or 'magma'
     if not save_folder.exists():
         save_folder.mkdir()
@@ -299,9 +324,6 @@ def make_plots(spike_times,spike_clusters,cluster_ids,tags,save_folder,salt_rez=
     plt.tight_layout()
     plt.savefig(save_folder.joinpath('population_tags.png'),dpi=300,transparent=True)
 
-
-
-
 # TODO: Implement functionality on data from multiple recordings
 # TODO: Implement plotting
 # TODO: Implement Chrmine option (slower optotagging responses)
@@ -314,6 +336,7 @@ def make_plots(spike_times,spike_clusters,cluster_ids,tags,save_folder,salt_rez=
 @click.option('-p','--plot',is_flag=True,help='Flag to make plots for each cell')
 def main(ks_dir,opto_fn,log_fn,consideration_window,plot,wavelength):
     ks_dir = Path(ks_dir)
+    print(ks_dir)
 
     # Load spikes 
     spike_samps = np.load(ks_dir.joinpath('spike_times.npy')).ravel()
